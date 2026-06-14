@@ -180,11 +180,35 @@ export default function (pi: ExtensionAPI) {
 			const { loadConfig } = await import("./config.ts");
 			const raw = loadConfig(ctx.cwd, ctx.isProjectTrusted());
 			const validation = validateConfig(raw);
-			const text = renderConfigStatus(
-				configDescription(validation.config),
-				validation.warnings,
-				validation.errors,
-			);
+
+			const lines: string[] = [];
+			lines.push("## File Config");
+			lines.push(configDescription(validation.config));
+
+			const sessionState = restoreSessionState(ctx);
+			if (sessionState && sessionState.selectedIds.size > 0) {
+				lines.push("");
+				lines.push("## Session Selection (overrides file config for this session)");
+				lines.push(`Panel: ${Array.from(sessionState.selectedIds).join(", ")}`);
+				lines.push(`Judge: ${sessionState.judgeId ?? "(auto)"}`);
+			} else {
+				lines.push("");
+				lines.push("## Session Selection");
+				lines.push("No session selection. Use /fusion-panel to choose models interactively.");
+			}
+
+			if (validation.warnings.length > 0) {
+				lines.push("");
+				lines.push("## Warnings");
+				for (const w of validation.warnings) lines.push(`- ${w}`);
+			}
+			if (validation.errors.length > 0) {
+				lines.push("");
+				lines.push("## Errors");
+				for (const e of validation.errors) lines.push(`- ${e}`);
+			}
+
+			const text = lines.join("\n");
 
 			if (ctx.mode === "print") {
 				console.log(text);

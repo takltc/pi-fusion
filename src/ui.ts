@@ -83,14 +83,15 @@ export async function selectPanelAndJudge(
 	const result = await ctx.ui.custom<{ selectedIds: Set<string>; judgeId: string | undefined } | null>(
 		(tui, theme, _kb, done) => {
 			let query = "";
-			let searchFocused = true;
+			let searchFocused = false;
+			let selectedIdentifier: string | undefined;
 
 			const container = new Container();
 			container.addChild(new DynamicBorder((str) => theme.fg("accent", str)));
 			container.addChild(new Text(theme.fg("accent", theme.bold("Configure Fusion Panel"))));
 
 			const hint = new Text(
-				theme.fg("dim", "Tab/↑↓ moves to list. Space toggles panel, j sets judge, Enter confirms, Esc cancels."),
+				theme.fg("dim", "Type to search. Space toggles panel, j sets judge, Enter confirms, Esc cancels. ↑↓ moves list."),
 			);
 			container.addChild(hint);
 
@@ -98,7 +99,6 @@ export async function selectPanelAndJudge(
 			searchInput.setValue(query);
 			searchInput.onSubmit = () => {
 				searchFocused = false;
-				listNeedsFocus = true;
 				tui.requestRender();
 			};
 			container.addChild(searchInput);
@@ -109,13 +109,15 @@ export async function selectPanelAndJudge(
 				const after = searchInput.getValue();
 				if (after !== before) {
 					query = after;
+					selectedIdentifier = undefined;
 					refreshList();
 				}
 			};
 
-			let listNeedsFocus = false;
 			const filteredModels = () => filterModels(models, query);
 			const allItems = () => makeItems(filteredModels(), state.selectedIds, state.judgeId);
+			const itemIndex = (identifier: string) => allItems().findIndex((i) => i.value === identifier);
+
 			const selectList = new SelectList(
 				allItems(),
 				Math.min(models.length, 10),
@@ -126,17 +128,23 @@ export async function selectPanelAndJudge(
 				const items = allItems();
 				(selectList as any).items = items;
 				(selectList as any).filteredItems = [...items];
-				(selectList as any).selectedIndex = 0;
+				const idx = selectedIdentifier ? itemIndex(selectedIdentifier) : 0;
+				(selectList as any).selectedIndex = Math.max(0, idx);
 				selectList.invalidate();
 				tui.requestRender();
 			}
 
 			function togglePanel(value: string) {
+				selectedIdentifier = value;
 				if (state.selectedIds.has(value)) {
 					state.selectedIds.delete(value);
 					if (state.judgeId === value) state.judgeId = undefined;
 				} else {
-					if (state.selectedIds.size >= 8) return;
+					if (state.selectedIds.size >= 8) {
+						hint.setText(theme.fg("warning", "Panel can have at most 8 models."));
+						tui.requestRender();
+						return;
+					}
 					state.selectedIds.add(value);
 					if (!state.judgeId) state.judgeId = value;
 				}
@@ -144,6 +152,7 @@ export async function selectPanelAndJudge(
 			}
 
 			function setJudge(value: string) {
+				selectedIdentifier = value;
 				if (!state.selectedIds.has(value)) {
 					if (state.selectedIds.size >= 8) {
 						hint.setText(theme.fg("warning", "Panel is full. Remove a model before setting judge."));
@@ -177,17 +186,13 @@ export async function selectPanelAndJudge(
 
 			container.addChild(selectList);
 			container.addChild(
-				new Text(theme.fg("dim", "Search filters models • Space toggles • j sets judge • Enter confirms")),
+				new Text(theme.fg("dim", "Type filters • Space toggles • j sets judge • Enter confirms • Esc cancels")),
 			);
 			container.addChild(new DynamicBorder((str) => theme.fg("accent", str)));
 
 			const originalListHandleInput = (selectList as any).handleInput.bind(selectList);
 			return {
 				render(width: number) {
-					if (listNeedsFocus) {
-						listNeedsFocus = false;
-						// Nothing explicit needed; focus follows input routing.
-					}
 					return container.render(width);
 				},
 				invalidate() {
@@ -201,10 +206,17 @@ export async function selectPanelAndJudge(
 
 					if (matchesKey(data, Key.tab)) {
 						searchFocused = !searchFocused;
+						tui.requestRender();
 						return;
 					}
 
 					if (searchFocused) {
+						// Arrow down/up switches to list without needing Enter.
+						if (matchesKey(data, Key.down) || matchesKey(data, Key.up)) {
+							searchFocused = false;
+							originalListHandleInput(data);
+							return;
+						}
 						handleSearchInput(data);
 						return;
 					}
@@ -212,7 +224,10 @@ export async function selectPanelAndJudge(
 					// List focused.
 					if (matchesKey(data, Key.space)) {
 						const selected = selectList.getSelectedItem();
-						if (selected) selectList.onSelect?.(selected);
+						if (selected) {
+							selectedIdentifier = selected.value;
+							selectList.onSelect?.(selected);
+						}
 						return;
 					}
 
