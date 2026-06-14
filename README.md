@@ -53,9 +53,9 @@ Quick-start with the interactive selector or template generator:
 
 ```
 /fusion-init      # creates .pi/fusion.json template
-/fusion-config    # validate and show active config
-/fusion-panel     # pick panel and judge via UI
-/fusion-models    # list authed models available for fusion
+/fusion-config    # show active config
+/fusion-setup     # choose panel and judge via UI
+/fusion-run       # choose setup + prompt, then run
 ```
 
 Example `fusion.json`:
@@ -103,17 +103,39 @@ answers from multiple perspectives.
 
 ### Slash commands
 
-- `/fusion <prompt>` — run fusion manually and prefill the result in the editor.
-- `/fusion-panel` — open an interactive, searchable model selector to choose the panel and judge for this session.
-  - **Search:** type to filter by provider, model id, or model name.
-  - **Space:** toggle the highlighted model into/out of the panel.
-  - **j:** set the highlighted model as the judge (auto-adds to panel if needed).
-  - **Tab:** switch focus between the search box and the filtered list.
-  - **Enter:** confirm your panel and judge.
-  - **Esc:** cancel without saving.
-- `/fusion-config` — validate the active config and show warnings/errors.
-- `/fusion-models` — list authed text models available for fusion.
-- `/fusion-init` — generate a project-local `.pi/fusion.json` template.
+- `/fusion <prompt>` — run fusion with the current setup.
+- `/fusion-run` — open the setup UI, then enter a prompt, then run fusion in one flow.
+- `/fusion-setup` — open the model setup UI to choose panel and judge.
+  - **Type** to search/filter models.
+  - **Tab** switches focus between search box and list.
+  - **↑/↓** navigate the list (works from either focus).
+  - **p** or **Space** toggles a model into/out of the panel.
+  - **j** sets the highlighted model as judge (press again on the same model to unset).
+  - **c** clears all selections.
+  - **Enter** confirms.
+  - **Esc** cancels.
+- `/fusion-config` — view file config + session selection in a native settings list.
+- `/fusion-models` — plain text list of authed models.
+- `/fusion-init` — generate `.pi/fusion.json` (confirms before overwriting).
+- `/fusion-clear` — clear the current session selection.
+
+### Setup UI flow
+
+```
+/fusion-run
+  → opens Fusion Setup
+  → pick panel models and judge
+  → press Enter
+  → type prompt in editor
+  → fusion executes automatically
+```
+
+Or configure once and run later:
+
+```
+/fusion-setup    # choose models
+/fusion <prompt> # run with those models
+```
 
 ### Overrides
 
@@ -132,8 +154,9 @@ Please use the fusion tool with analysis_models ["anthropic/claude-sonnet-4-5", 
 
 ## Session state
 
-`/fusion-panel` saves the selected panel and judge in the session. On `/resume`,
+`/fusion-setup` saves the selected panel and judge in the session. On `/resume`,
 the extension restores the last selection and shows it in the status line.
+Use `/fusion-clear` to remove it.
 
 ## Development
 
@@ -149,5 +172,6 @@ npm test      # runs the test files under src/__tests__/
 - Uses pi's authed models instead of OpenRouter's catalog.
 - Does not inject `openrouter:web_search` or `openrouter:web_fetch` into panel/judge calls (pi has its own tools; the outer model can still use them).
 - No recursion-depth header is needed because inner calls use `complete()` directly and never see the `fusion` tool.
-- Adds interactive panel/judge selection via `/fusion-panel`.
+- Adds interactive panel/judge selection via `/fusion-setup` and `/fusion-run`.
+- Adds `/fusion-clear` to reset session selection.
 - Adds config validation, preview commands, and session-state persistence.
