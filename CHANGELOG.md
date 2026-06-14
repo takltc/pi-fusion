@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.0
+
+- `/fusion` now offers argument autocompletion for `on` (alias for `forced`), `available`, and `off`.
+- Require Node >= 22.19.0 (matches the pi runtime); CI now runs on Node 22.
+- Fixed the test runner so every suite under `src/__tests__/` runs (previously only the first file executed).
+- Removed dead code left over from the legacy-command cleanup (no behavior change).
+- Rewrote the README and updated the GitHub org slug to `synthetic-recon`.
+
 ## 0.5.0
 
 - Added explicit three-state session mode: `available`, `forced`, and `off`.
@@ -7,7 +15,6 @@
 - `/fusion available` re-enables model-decided fusion use.
 - `/fusion forced` forces every normal prompt through fusion.
 - `/fusion` with no args toggles between `available` and `forced`.
-- `/fusion` now offers argument autocompletion for `on` (alias for `forced`), `available`, and `off`.
 - Removed legacy commands: `/fusion-run`, `/fusion-models`, `/fusion-clear`, and `/fusion-config`.
 - Footer/status now reflects `Fusion available`, `Fusion forced`, or `Fusion off`.
 
