@@ -1,83 +1,137 @@
 # pi-fusion
 
-A configurable pi extension that replicates OpenRouter's Fusion behavior using
-the authed models pi already has access to.
+Multi-model deliberation for [pi](https://github.com/earendil-works), inspired by OpenRouter Fusion.
+
+pi-fusion runs your prompt against a panel of the models you're already authed for, then has a judge model compare their answers and return structured analysis. Your active model uses that analysis to write a better, less-blind-spotted final answer. It works out of the box with no configuration.
 
 ## What it does
 
-When you invoke the `fusion` tool (or run `/fusion`), pi:
+When the `fusion` tool runs, pi:
 
-1. Picks a panel of authed models (configurable, default is a diverse panel).
-2. Sends your prompt to each model in parallel.
+1. Picks a panel of authed models (a diverse auto-selection by default, or your configured panel).
+2. Sends your prompt to every panel model in parallel.
 3. Sends all panel responses to a judge model.
 4. The judge returns structured analysis:
-   - **consensus** — points most models agree on
-   - **contradictions** — disagreements with each model's stance
-   - **partial_coverage** — points only some models covered
+   - **consensus** — points most models agree on (treat as higher-confidence)
+   - **contradictions** — where models disagree, with each model's stance
+   - **partial_coverage** — points only some models raised
    - **unique_insights** — ideas raised by a single model
    - **blind_spots** — topics no panel model addressed
-5. The outer model receives the analysis and raw responses and writes a final answer.
+5. Your active model receives the analysis plus the raw responses and writes the final answer.
 
-If no config exists, it auto-picks a diverse panel from `ctx.modelRegistry.getAvailable()`.
+When two or more panel models answer, the judge synthesis runs. If only one model succeeds, the single response is returned directly (no synthesis).
 
-## Installation
-
-### npm package
+## Install
 
 ```bash
-pi install npm:pi-fusion
+pi install npm:pi-fusion                          # from npm
+pi install git:github.com/syntheticrecon/pi-fusion # from GitHub
+pi install /path/to/pi-fusion                      # from a local checkout
 ```
 
-### GitHub package
+After installing or updating in a running session, run `/reload`.
 
-```bash
-pi install git:github.com/syntheticrecon/pi-fusion
+There's no build step — pi loads the TypeScript directly via [jiti](https://github.com/unjs/jiti).
+
+## Quick start
+
+```
+# 1. (optional) pick your panel and judge interactively
+/fusion-setup
+
+# 2. just ask — the model decides when fusion is worth it (this is the default)
+Use fusion to compare REST vs GraphQL for a new public API.
+
+# 3. or force every prompt through fusion for the session
+/fusion on
 ```
 
-### Local development checkout
+Check what's active any time with `/fusion-status`.
 
-```bash
-git clone https://github.com/syntheticrecon/pi-fusion.git
-cd pi-fusion
-npm install
-npm run check
-npm test
-pi -e .
+No setup is required: with no panel configured, fusion auto-selects a diverse set of your authed models, and the default mode is `available` (the model calls fusion when a task benefits from it).
+
+## Usage
+
+### As a tool
+
+By default fusion is `available`, so the model can call it whenever a task genuinely benefits from multiple perspectives — research, critique, compare/contrast, architecture trade-offs, or decisions where being wrong is expensive. Just ask:
+
+```
+Use fusion to evaluate whether we should migrate to the Next.js App Router.
 ```
 
-Or install a local checkout into pi:
+### Session modes
 
-```bash
-pi install /path/to/pi-fusion
+```
+/fusion on        # force every prompt through fusion (alias: forced) — needs a panel from /fusion-setup
+/fusion available # enable fusion; the model decides when to use it (alias: auto)
+/fusion off       # disable fusion and block fusion tool calls for the session (alias: disable)
+/fusion           # no argument: toggle between available and forced
 ```
 
-Run `/reload` in an existing pi session after changing or installing the extension.
+Typing `/fusion ` offers `on` / `available` / `off` as argument completions. Mode is saved in the session and restored on `/resume`.
+
+### Force fusion for one prompt
+
+Run a single prompt through fusion without changing the session mode:
+
+```
+/fusion <prompt>
+```
+
+The active model calls fusion, then writes the final answer itself in its normal voice.
+
+### Per-call overrides and context
+
+Override the configured panel or judge for a single call:
+
+```
+Use the fusion tool with analysis_models ["anthropic/claude-sonnet-4-5", "openai/gpt-4.1"]
+and model "anthropic/claude-opus-4-5" to weigh migrating our build to Bun.
+```
+
+Panel and judge calls do **not** see the whole pi conversation thread. When prior context matters, either put the relevant details in the prompt, or ask fusion to include recent turns:
+
+```json
+{
+  "prompt": "Evaluate the architecture decision we just discussed.",
+  "context_mode": "recent",
+  "context_turns": 6
+}
+```
+
+`context_mode` defaults to `"none"`. `context_turns` is clamped to 1–10 (default 4). The judge sees the same context-expanded task the panel saw, plus the panel responses.
+
+### Commands
+
+| Command | What it does |
+|---------|--------------|
+| `/fusion-setup` | Choose the panel and judge in an interactive picker (interactive mode only). |
+| `/fusion on` \| `available` \| `off` | Set the session mode (aliases: `forced`, `auto`, `disable`). |
+| `/fusion` | With no argument, toggle between `available` and `forced`. |
+| `/fusion <prompt>` | Force fusion for a single prompt, then answer normally. |
+| `/fusion-status` | Show the current mode, panel, and judge. |
+| `/fusion-report <prompt>` | Run fusion directly and write the raw panel/judge diagnostic report into the editor. |
+| `/fusion-init` | Write a `.pi/fusion.json` template (confirms before overwriting; trusted projects only). |
+
+#### `/fusion-setup` controls
+
+- **Type** to search/filter models.
+- **Tab** switches focus between the search box and the list.
+- **↑/↓** navigate the list (works from either focus).
+- **p** or **Space** toggles a model into/out of the panel.
+- **j** sets the highlighted model as judge (press again on the same model to unset).
+- **c** clears all selections.
+- **Enter** confirms, **Esc** cancels.
 
 ## Configuration
 
-Create one of:
+Configuration is optional. To pin a panel and judge, create either:
 
 - `~/.pi/agent/fusion.json` (global)
-- `<cwd>/.pi/fusion.json` (project-local, overrides global)
+- `<cwd>/.pi/fusion.json` (project-local, overrides global — loaded only for trusted projects)
 
-Project-local `fusion.json` is only loaded for trusted projects.
-
-Quick-start:
-
-```
-/fusion-setup     # choose panel and judge via UI
-/fusion           # toggle forced Fusion mode on/off
-/fusion-status    # show current mode, panel, and judge
-```
-
-Optional config template:
-
-```
-/fusion-init      # creates .pi/fusion.json template
-/fusion-config    # show active config
-```
-
-Example `fusion.json`:
+Generate a project-local template with `/fusion-init`, or write one by hand:
 
 ```json
 {
@@ -94,130 +148,34 @@ Example `fusion.json`:
 }
 ```
 
-### Configuration fields
-
 | Field | Default | Description |
 |-------|---------|-------------|
-| `panel` | auto-diverse | Array of model identifiers in `provider/id` form. Only authed models are used. |
+| `panel` | auto-diverse | Model identifiers in `provider/id` form. Only authed models are used. |
 | `judge` | current model, then first panel model | Model identifier in `provider/id` form. |
 | `maxPanelModels` | 3 | Max panel size (1–8). |
 | `maxPanelOutputTokens` | 2048 | Max tokens per panel response. |
 | `maxCompletionTokens` | 4096 | Max tokens for the judge analysis. |
-| `temperature` | 0.3 | Sampling temperature for panel and judge. |
+| `temperature` | 0.3 | Sampling temperature for panel and judge calls. |
 
-If no config is provided, fusion picks a diverse panel from authed models.
-
-## Usage
-
-### As a tool
-
-Ask the agent to use it:
-
-```
-Use fusion to compare the pros and cons of REST vs GraphQL for a new API.
-```
-
-The model calls the `fusion` tool, receives the structured analysis, and
-answers from multiple perspectives.
-
-### Slash commands
-
-Daily use is intentionally small:
-
-- `/fusion-setup` — choose panel and judge.
-- `/fusion` — toggle between `available` and `forced` mode.
-- `/fusion off` — fully disable fusion for the session; model tool calls are blocked.
-- `/fusion available` — allow the active model to decide when fusion is useful.
-- `/fusion forced` — force every normal prompt through fusion.
-- `/fusion <prompt>` — force Fusion for one prompt, then let the active pi model answer normally.
-- `/fusion-status` — show current mode, panel, and judge.
-
-Advanced/debug commands remain available:
-
-- `/fusion-report <prompt>` — run fusion directly and write the raw diagnostic panel/judge report into the editor.
-- `/fusion-config` — view file config + session selection in a native settings list.
-- `/fusion-init` — generate `.pi/fusion.json` (confirms before overwriting).
-
-`/fusion-setup` controls:
-  - **Type** to search/filter models.
-  - **Tab** switches focus between search box and list.
-  - **↑/↓** navigate the list (works from either focus).
-  - **p** or **Space** toggles a model into/out of the panel.
-  - **j** sets the highlighted model as judge (press again on the same model to unset).
-  - **c** clears all selections.
-  - **Enter** confirms.
-  - **Esc** cancels.
-### Simple workflow
-
-Configure once:
-
-```
-/fusion-setup
-```
-
-Set session mode:
-
-```
-/fusion available # model-decided use
-/fusion forced    # force every normal prompt through fusion
-/fusion off       # fully disable/block fusion
-```
-
-`/fusion` with no arguments toggles between `available` and `forced`.
-
-When mode is `forced`, normal prompts are automatically routed through the fusion tool before the active pi model answers.
-
-When mode is `available`, the `fusion` tool is available and the active model may invoke it when the task genuinely benefits from multiple perspectives, critique, research, comparison, or expensive-to-be-wrong analysis.
-
-When mode is `off`, fusion tool calls are blocked for the session.
-
-Force Fusion once without changing the toggle:
-
-```
-/fusion <prompt>
-```
-
-### Overrides and context
-
-Override the configured panel or judge per-call:
-
-```
-Please use the fusion tool with analysis_models ["anthropic/claude-sonnet-4-5", "openai/gpt-4.1"] and model "anthropic/claude-opus-4-5" to analyze whether we should migrate to Next.js App Router.
-```
-
-Panel and judge calls do not automatically see the whole pi conversation thread. The active model keeps the thread and decides what to send to fusion.
-
-When prior conversation context matters, the model can either include the relevant context directly in `prompt` or ask fusion to include recent turns:
-
-```json
-{
-  "prompt": "Evaluate the architecture decision we just discussed.",
-  "context_mode": "recent",
-  "context_turns": 6
-}
-```
-
-`context_mode` defaults to `"none"`. `context_turns` is clamped to 1–10 and defaults to 4. The judge receives the same context-expanded task text the panel saw, plus the panel responses.
+Precedence for both panel and judge: per-call overrides → session selection (`/fusion-setup`) → `fusion.json` → auto-selection.
 
 ## How models are resolved
 
-- `provider/id` identifiers are resolved with `ModelRegistry.find(provider, id)`.
-- Identifiers without a `provider/` prefix are matched by exact model `id` across all providers.
-- Only models that pass `registry.hasConfiguredAuth(model)` are used.
-- If an explicitly configured panel model is not authed, it is skipped with a warning.
+- Reference models as `provider/id` (e.g. `anthropic/claude-sonnet-4-5`). A bare `id` matches by exact id across all providers.
+- Only authed models are used; a configured model that isn't authed is skipped with a warning.
+- With no panel configured, fusion auto-selects a diverse set (spreading across providers) from your authed models.
+- The judge defaults to your current model, falling back to the first panel model.
 
 ## Session state
 
-`/fusion-setup` saves the selected panel and judge in the session. `/fusion` saves the current mode (`available`, `forced`, or `off`). On `/resume`, the extension restores the last selection and footer state.
-
-Use `/fusion off` to fully disable/block fusion for the session.
+`/fusion-setup` saves the selected panel and judge in the session, and `/fusion` saves the current mode (`available`, `forced`, or `off`). On `/resume`, the extension restores the last selection, mode, and footer state. Use `/fusion off` to fully disable and block fusion for the session.
 
 ## Development
 
 ```bash
-npm install   # installs peer deps for type checking
-npm run check # TypeScript --noEmit
-npm test      # runs the test files under src/__tests__/
+npm install    # installs peer deps for type-checking and tests
+npm run check  # tsc --noEmit
+npm test       # runs every suite in src/__tests__/
 npm pack --dry-run
 ```
 
@@ -227,7 +185,6 @@ Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md]
 
 - Uses pi's authed models instead of OpenRouter's catalog.
 - Does not inject `openrouter:web_search` or `openrouter:web_fetch` into panel/judge calls (pi has its own tools; the outer model can still use them).
-- No recursion-depth header is needed because inner calls use `complete()` directly and never see the `fusion` tool.
+- No recursion-depth header is needed — inner calls use `complete()` directly and never see the `fusion` tool.
 - Adds interactive panel/judge selection via `/fusion-setup`.
-- Adds session modes: `available`, `forced`, and `off`.
-- Adds config validation, diagnostic reports, and session-state persistence.
+- Adds session modes (`available`, `forced`, `off`), diagnostic reports (`/fusion-report`), and session-state persistence.

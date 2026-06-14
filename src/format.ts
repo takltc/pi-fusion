@@ -78,25 +78,3 @@ export function formatResult(
 
 	return lines.join("\n");
 }
-
-export function formatPreview(
-	panel: Array<{ provider: string; id: string; name: string }>,
-	judge: { provider: string; id: string; name: string },
-	warnings: string[],
-): string {
-	const lines: string[] = [];
-	lines.push("## Fusion Panel");
-	for (const [i, m] of panel.entries()) {
-		lines.push(`${i + 1}. ${m.provider}/${m.id} — ${m.name}`);
-	}
-	lines.push("");
-	lines.push(`## Judge\n${judge.provider}/${judge.id} — ${judge.name}`);
-	if (warnings.length > 0) {
-		lines.push("");
-		lines.push("## Warnings");
-		for (const w of warnings) {
-			lines.push(`- ${w}`);
-		}
-	}
-	return lines.join("\n");
-}

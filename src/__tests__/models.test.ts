@@ -2,7 +2,7 @@
  * Tests for pi-fusion model resolution and panel selection.
  */
 
-import { modelDisplay, resolveModelIdentifier, resolvePanelAndJudge, selectDiversePanel } from "../models.ts";
+import { modelDisplay, resolvePanelAndJudge, selectDiversePanel } from "../models.ts";
 import type { Api, Model } from "../types.ts";
 
 function test(name: string, fn: () => void | Promise<void>) {

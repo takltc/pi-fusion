@@ -4,8 +4,8 @@
  * Single unified model setup flow.
  */
 
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { DynamicBorder, getSelectListTheme, getSettingsListTheme } from "@earendil-works/pi-coding-agent";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { DynamicBorder, getSelectListTheme } from "@earendil-works/pi-coding-agent";
 import {
 	Container,
 	Input,
@@ -13,11 +13,8 @@ import {
 	matchesKey,
 	type SelectItem,
 	SelectList,
-	SettingsList,
-	type SettingItem,
 	Text,
 } from "@earendil-works/pi-tui";
-import type { FusionConfig } from "./config.ts";
 import { modelDisplay } from "./models.ts";
 import type { Api, Model } from "./types.ts";
 
@@ -297,150 +294,4 @@ export async function selectFusionSetup(
 			},
 		};
 	});
-}
-
-/**
- * Show the active config and session selection as a native SettingsList summary.
- * User can press Enter or Esc to dismiss.
- */
-export async function showConfigSummary(
-	ctx: ExtensionContext,
-	config: FusionConfig,
-	warnings: string[],
-	errors: string[],
-	sessionPanel?: string[],
-	sessionJudge?: string,
-): Promise<void> {
-	if (!ctx.hasUI) {
-		ctx.ui.notify(configDescription(config), errors.length > 0 ? "error" : warnings.length > 0 ? "warning" : "info");
-		return;
-	}
-
-	const items: SettingItem[] = [];
-
-	items.push({
-		id: "panel",
-		label: "Panel",
-		currentValue: config.panel?.join(", ") ?? "auto (session selection)",
-		description: "Models that answer the prompt in parallel.",
-	});
-
-	items.push({
-		id: "judge",
-		label: "Judge",
-		currentValue: config.judge ?? "auto (first panel model)",
-		description: "Model that produces structured analysis.",
-	});
-
-	items.push({
-		id: "maxPanelModels",
-		label: "Max Panel Models",
-		currentValue: String(config.maxPanelModels ?? 3),
-	});
-
-	items.push({
-		id: "maxPanelOutputTokens",
-		label: "Panel Output Tokens",
-		currentValue: String(config.maxPanelOutputTokens ?? 2048),
-	});
-
-	items.push({
-		id: "maxCompletionTokens",
-		label: "Judge Tokens",
-		currentValue: String(config.maxCompletionTokens ?? 4096),
-	});
-
-	items.push({
-		id: "temperature",
-		label: "Temperature",
-		currentValue: String(config.temperature ?? 0.3),
-	});
-
-	if (sessionPanel && sessionPanel.length > 0) {
-		items.push({
-			id: "sessionPanel",
-			label: "Session Panel",
-			currentValue: sessionPanel.join(", "),
-			description: "Overrides file config for this session.",
-		});
-		items.push({
-			id: "sessionJudge",
-			label: "Session Judge",
-			currentValue: sessionJudge ?? "auto",
-			description: "Overrides file config for this session.",
-		});
-	}
-
-	for (const w of warnings) {
-		items.push({ id: `warn-${items.length}`, label: "⚠ Warning", currentValue: w });
-	}
-	for (const e of errors) {
-		items.push({ id: `err-${items.length}`, label: "✗ Error", currentValue: e });
-	}
-
-	await ctx.ui.custom<void>((tui, theme, _kb, done) => {
-		const container = new Container();
-		container.addChild(new DynamicBorder((str) => theme.fg("accent", str)));
-		container.addChild(new Text(theme.fg("accent", theme.bold("Fusion Configuration"))));
-		container.addChild(new Text(theme.fg("dim", "Read-only summary. Use /fusion-setup to change models.")));
-
-		const settingsList = new SettingsList(
-			items,
-			Math.min(items.length, 12),
-			getSettingsListTheme(),
-			() => {
-				/* values are read-only */
-			},
-			() => done(undefined),
-		);
-
-		container.addChild(settingsList);
-		container.addChild(new Text(theme.fg("dim", "Enter / Esc to close")));
-		container.addChild(new DynamicBorder((str) => theme.fg("accent", str)));
-
-		return {
-			render(width: number) {
-				return container.render(width);
-			},
-			invalidate() {
-				container.invalidate();
-			},
-			handleInput(data: string) {
-				if (matchesKey(data, Key.escape) || matchesKey(data, Key.enter) || matchesKey(data, Key.return)) {
-					done(undefined);
-					return;
-				}
-				settingsList.handleInput(data);
-				tui.requestRender();
-			},
-		};
-	});
-}
-
-/**
- * Render config status as plain text for print/notification fallback.
- */
-export function renderConfigStatus(configText: string, warnings: string[], errors: string[]): string {
-	const lines: string[] = [];
-	lines.push(configText);
-	if (errors.length > 0) {
-		lines.push("\nErrors:");
-		for (const e of errors) lines.push(`- ${e}`);
-	}
-	if (warnings.length > 0) {
-		lines.push("\nWarnings:");
-		for (const w of warnings) lines.push(`- ${w}`);
-	}
-	return lines.join("\n");
-}
-
-function configDescription(config: FusionConfig): string {
-	const parts: string[] = [];
-	if (config.panel) parts.push(`panel=[${config.panel.join(", ")}]`);
-	if (config.judge) parts.push(`judge=${config.judge}`);
-	parts.push(`maxPanelModels=${config.maxPanelModels ?? 3}`);
-	parts.push(`maxPanelOutputTokens=${config.maxPanelOutputTokens ?? 2048}`);
-	parts.push(`maxCompletionTokens=${config.maxCompletionTokens ?? 4096}`);
-	parts.push(`temperature=${config.temperature ?? 0.3}`);
-	return parts.join(", ");
 }

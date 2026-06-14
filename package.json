@@ -31,7 +31,7 @@
     "clean": "rm -rf node_modules",
     "build": "echo 'pi-fusion is loaded directly by pi via jiti; no build step required'",
     "check": "tsc --noEmit",
-    "test": "node --import jiti/register src/__tests__/utils.test.ts src/__tests__/config.test.ts src/__tests__/models.test.ts src/__tests__/format.test.ts src/__tests__/llm.test.ts src/__tests__/context.test.ts"
+    "test": "for f in src/__tests__/*.test.ts; do node --import jiti/register \"$f\" || exit 1; done"
   },
   "pi": {
     "extensions": [

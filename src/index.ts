@@ -9,22 +9,20 @@
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { type AutocompleteItem, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
-	configDescription,
 	DEFAULT_MAX_COMPLETION_TOKENS,
 	DEFAULT_TEMPERATURE,
 	generateConfigExample,
 	MAX_PANEL_MODELS_HARD_LIMIT,
-	validateConfig,
 } from "./config.ts";
 import { buildRecentContextFromEntries, type FusionContextMode, normalizeContextTurns } from "./context.ts";
 import { resolveFusionModels, runFusion } from "./fusion.ts";
 import { modelDisplay } from "./models.ts";
-import { selectFusionSetup, showConfigSummary, type FusionMode, type FusionSetupState } from "./ui.ts";
+import { selectFusionSetup, type FusionMode, type FusionSetupState } from "./ui.ts";
 import { formatResult } from "./format.ts";
 import type { FusionOptions } from "./types.ts";
 const FusionParams = Type.Object(
@@ -374,7 +372,16 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("fusion", {
-		description: "Set fusion mode: /fusion toggles available/forced, /fusion off disables, /fusion <prompt> forces once",
+		description: "Set fusion mode: /fusion on | available | off (no arg toggles available/forced; /fusion <prompt> forces once)",
+		getArgumentCompletions: (prefix: string): AutocompleteItem[] | null => {
+			const items: AutocompleteItem[] = [
+				{ value: "on", label: "on", description: "Force every prompt through the panel" },
+				{ value: "available", label: "available", description: "Let the model decide when to use fusion" },
+				{ value: "off", label: "off", description: "Disable fusion for this session" },
+			];
+			const filtered = items.filter((i) => i.value.startsWith(prefix.trim().toLowerCase()));
+			return filtered.length > 0 ? filtered : null;
+		},
 		handler: async (args, ctx) => {
 			const prompt = args.trim();
 			const sessionState = restoreSessionState(ctx);

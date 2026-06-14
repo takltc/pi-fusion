@@ -66,15 +66,3 @@ export interface FusionDetails {
 	failure_reason?: "all_panels_failed" | "insufficient_credits" | "rate_limited" | "unexpected_error";
 }
 
-export interface ResolvedPanel {
-	panel: Model<Api>[];
-	judge: Model<Api>;
-	warnings: string[];
-}
-
-export interface ConfigValidationResult {
-	valid: boolean;
-	config: FusionConfig;
-	warnings: string[];
-	errors: string[];
-}

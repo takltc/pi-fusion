@@ -2,7 +2,7 @@
  * Model resolution and panel selection for pi-fusion.
  */
 
-import type { Api, AssistantMessage, Model } from "@earendil-works/pi-ai";
+import type { Api, Model } from "@earendil-works/pi-ai";
 import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
 import { MAX_PANEL_MODELS_HARD_LIMIT } from "./config.ts";
 

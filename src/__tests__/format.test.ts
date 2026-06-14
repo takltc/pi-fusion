@@ -3,7 +3,7 @@
  */
 
 import { formatAnalysis, formatResult } from "../format.ts";
-import type { FusionAnalysis, FusionDetails, PanelResult } from "../types.ts";
+import type { FusionAnalysis, FusionDetails } from "../types.ts";
 
 function test(name: string, fn: () => void | Promise<void>) {
 	Promise.resolve(fn()).then(

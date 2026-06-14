@@ -2,7 +2,7 @@
  * Core fusion pipeline: panel execution + judge analysis.
  */
 
-import type { Api, AssistantMessage, Model } from "@earendil-works/pi-ai";
+import type { Api, Model } from "@earendil-works/pi-ai";
 import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
 import {
 	applyDefaults,

@@ -7,7 +7,8 @@
 - `/fusion available` re-enables model-decided fusion use.
 - `/fusion forced` forces every normal prompt through fusion.
 - `/fusion` with no args toggles between `available` and `forced`.
-- Removed legacy commands: `/fusion-run`, `/fusion-models`, and `/fusion-clear`.
+- `/fusion` now offers argument autocompletion for `on` (alias for `forced`), `available`, and `off`.
+- Removed legacy commands: `/fusion-run`, `/fusion-models`, `/fusion-clear`, and `/fusion-config`.
 - Footer/status now reflects `Fusion available`, `Fusion forced`, or `Fusion off`.
 
 ## 0.4.0
