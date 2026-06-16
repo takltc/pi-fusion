@@ -153,8 +153,12 @@ export async function callModelWithTools(
 		}
 
 		if (forceFinalize || used >= maxToolCalls) {
-			// Force a text answer with tools omitted.
-			const finalMsg = await runComplete(model, { systemPrompt, messages }, options);
+			// Tools exhausted or looping: ask for the final answer with tools omitted, and
+			// nudge via the system prompt (some models go silent when tools disappear unless
+			// explicitly told to answer now). System-prompt nudge avoids an illegal trailing
+			// user message after tool results.
+			const finalSystem = `${systemPrompt}\n\nYou have reached the tool-call limit. Write your complete final answer now using only what you have already gathered — do not request any more tools.`;
+			const finalMsg = await runComplete(model, { systemPrompt: finalSystem, messages }, options);
 			turns++;
 			return { message: finalMsg, turns, toolCalls, cappedOut: true };
 		}

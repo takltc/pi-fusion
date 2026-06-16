@@ -25,7 +25,7 @@ export interface FusionConfig {
 	temperature?: number;
 	/** Panel tool access: "none" (default), "readonly", "all", or an explicit tool-name list. */
 	panelTools?: ToolSelection;
-	/** Max tool-call steps per panel model (1–100, default 8). */
+	/** Max tool-call steps per panel model (1–100, default 16). */
 	maxToolCalls?: number;
 	/** Non-interactive consent for mutating tools (bash/edit/write) — required in print/no-UI mode. */
 	panelToolsConsent?: boolean;

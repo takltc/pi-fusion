@@ -43,14 +43,14 @@ test("selectionLabel summarizes the selection", () => {
 	eq(selectionLabel(["nope"]), "none", "all-unknown list");
 });
 
-test("clampMaxToolCalls clamps to [1,100] with default 8", () => {
-	eq(clampMaxToolCalls(undefined), 8, "default");
+test("clampMaxToolCalls clamps to [1,100] with default 16", () => {
+	eq(clampMaxToolCalls(undefined), 16, "default");
 	eq(clampMaxToolCalls(0), 1, "below min");
 	eq(clampMaxToolCalls(250), 100, "above max");
 	eq(clampMaxToolCalls(99), 99, "in range (high)");
 	eq(clampMaxToolCalls(6), 6, "in range");
 	eq(clampMaxToolCalls(6.9), 6, "floored");
-	eq(clampMaxToolCalls(Number.NaN), 8, "NaN -> default");
+	eq(clampMaxToolCalls(Number.NaN), 16, "NaN -> default");
 });
 
 test("resolveToolDefs builds real tool definitions for the selection", () => {

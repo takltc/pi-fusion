@@ -82,7 +82,7 @@ const FusionParams = Type.Object(
 		),
 		max_tool_calls: Type.Optional(
 			Type.Integer({
-				description: "Max tool-call steps per panel model when tools are enabled (1–100). Default 8.",
+				description: "Max tool-call steps per panel model when tools are enabled (1–100). Default 16.",
 				minimum: MIN_TOOL_CALLS,
 				maximum: MAX_TOOL_CALLS,
 				default: DEFAULT_MAX_TOOL_CALLS,

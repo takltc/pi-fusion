@@ -22,7 +22,7 @@ import { clampMaxToolCalls, isMutatingSelection } from "./tools.ts";
 import type { Api, Model, ToolMode } from "./types.ts";
 
 const TOOL_MODE_CYCLE: ToolMode[] = ["none", "readonly", "all"];
-const MAX_CALLS_PRESETS = [4, 8, 12, 25, 50, 100];
+const MAX_CALLS_PRESETS = [4, 8, 12, 16, 25, 50, 100];
 
 interface ModelInfo {
 	identifier: string;

@@ -16,7 +16,7 @@ export const DEFAULT_TEMPERATURE = 0.3;
 export const MAX_PANEL_MODELS_HARD_LIMIT = 8;
 export const PANEL_CONCURRENCY = 4;
 
-export const DEFAULT_MAX_TOOL_CALLS = 8;
+export const DEFAULT_MAX_TOOL_CALLS = 16;
 export const MIN_TOOL_CALLS = 1;
 export const MAX_TOOL_CALLS = 100;
 /** Per tool result, before it re-enters the loop transcript (keeps panel context bounded). */

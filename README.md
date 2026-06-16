@@ -132,7 +132,7 @@ Generate a project-local template with `/fusion-init`, or write one by hand:
   "maxCompletionTokens": 4096,
   "temperature": 0.3,
   "panelTools": "none",
-  "maxToolCalls": 8
+  "maxToolCalls": 16
 }
 ```
 
@@ -145,7 +145,7 @@ Generate a project-local template with `/fusion-init`, or write one by hand:
 | `maxCompletionTokens` | 4096 | Max tokens for the judge analysis. |
 | `temperature` | 0.3 | Sampling temperature for panel and judge calls. |
 | `panelTools` | `"none"` | Panel tool access: `"none"`, `"readonly"` (read/grep/find/ls), `"all"` (adds bash/edit/write), or an explicit tool-name list (e.g. `["read", "grep"]`). The list form is **config-file only**. |
-| `maxToolCalls` | 8 | Max tool-call steps per panel model when tools are on (1–100). |
+| `maxToolCalls` | 16 | Max tool-call steps **per panel model** when tools are on (1–100). Models batch several calls per turn, so this is the per-agent budget; total ≈ panel size × this. |
 | `panelToolsConsent` | `false` | Pre-authorize mutating tools in non-interactive (`-p`) runs. |
 
 **Precedence.** Panel/judge come from session selection (`/fusion-setup`) → `fusion.json` → auto-selection (the tool cannot set them). Per-call tool params (`panel_tools`, `max_tool_calls`) override session → `fusion.json` → default.
