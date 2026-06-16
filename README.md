@@ -81,14 +81,11 @@ Run a single prompt through fusion without changing the session mode:
 
 The active model calls fusion, then writes the final answer itself in its normal voice.
 
-### Per-call overrides and context
+### Context
 
-Override the configured panel or judge for a single call:
-
-```
-Use the fusion tool with analysis_models ["anthropic/claude-sonnet-4-5", "openai/gpt-4.1"]
-and model "anthropic/claude-opus-4-5" to weigh migrating our build to Bun.
-```
+The **panel and judge are always your configuration** — set them with `/fusion-setup` (session) or
+`fusion.json`. The model invoking the tool cannot pick panel/judge models; if you've configured
+them, those are always used.
 
 Panel and judge calls do **not** see the whole pi conversation thread. When prior context matters, either put the relevant details in the prompt, or ask fusion to include recent turns:
 
@@ -116,13 +113,21 @@ Panel and judge calls do **not** see the whole pi conversation thread. When prio
 
 #### `/fusion-setup` controls
 
-- **Type** to search/filter models.
-- **Tab** switches focus between the search box and the list.
-- **↑/↓** navigate the list (works from either focus).
-- **p** or **Space** toggles a model into/out of the panel.
-- **j** sets the highlighted model as judge (press again on the same model to unset).
-- **c** clears all selections.
-- **Enter** confirms, **Esc** cancels.
+The screen has two sections — **Models** and **Config** — shown with the live panel/judge
+selection at the top. **Tab** switches between sections.
+
+Models section:
+- **↑/↓** move through the list.
+- **p** toggles the highlighted model into/out of the **panel**.
+- **j** toggles the highlighted model as **judge** (independent of the panel — the judge can be any model, or left unset for auto).
+- **c** clears the panel selection.
+- **/** starts a search; type to filter, **Enter**/**Esc** to finish searching.
+
+Config section:
+- **↑/↓** move between settings; **Space** or **←/→** change a value.
+- Settings: **Panel tools** (`none` → `readonly` → `all`) and **Max tool calls** (`4`/`8`/`12`/`25`/`50`/`100`).
+
+**Enter** saves, **Esc** cancels (from either section).
 
 ## Configuration
 
@@ -144,7 +149,9 @@ Generate a project-local template with `/fusion-init`, or write one by hand:
   "maxPanelModels": 3,
   "maxPanelOutputTokens": 2048,
   "maxCompletionTokens": 4096,
-  "temperature": 0.3
+  "temperature": 0.3,
+  "panelTools": "none",
+  "maxToolCalls": 8
 }
 ```
 
@@ -156,8 +163,32 @@ Generate a project-local template with `/fusion-init`, or write one by hand:
 | `maxPanelOutputTokens` | 2048 | Max tokens per panel response. |
 | `maxCompletionTokens` | 4096 | Max tokens for the judge analysis. |
 | `temperature` | 0.3 | Sampling temperature for panel and judge calls. |
+| `panelTools` | `"none"` | Panel tool access: `"none"`, `"readonly"` (read/grep/find/ls), `"all"` (adds bash/edit/write), or an explicit tool-name list (e.g. `["read", "grep"]`). The list form is **config-file only**. |
+| `maxToolCalls` | 8 | Max tool-call steps per panel model when tools are on (1–100). |
+| `panelToolsConsent` | `false` | Pre-authorize mutating tools in non-interactive (`-p`) runs. |
 
-Precedence for both panel and judge: per-call overrides → session selection (`/fusion-setup`) → `fusion.json` → auto-selection.
+Precedence: panel/judge come from session selection (`/fusion-setup`) → `fusion.json` → auto-selection (the tool cannot set them). Per-call tool params (`panel_tools`, `max_tool_calls`) override session → `fusion.json` → default.
+
+### Panel tools (multi-turn)
+
+By default panel models answer in a single turn with no tools. Enable tools to let each panel
+model **gather evidence before answering** — read files, grep, search — across multiple internal
+turns (bounded by `maxToolCalls`), then return its answer. The judge stays tool-free.
+
+- **`readonly`** (`read`, `grep`, `find`, `ls`) — safe; no mutation.
+- **`all`** — adds `bash`, `edit`, `write`. It is **off by default** and requires consent
+  (the `/fusion-setup` picker prompts; non-interactive runs need `"panelToolsConsent": true`).
+  Because several models run concurrently, mutating runs **serialize the panel** (one model at a
+  time) so they can't clobber each other's writes. Without consent, `all` downgrades to read-only.
+
+Set tools interactively in `/fusion-setup` (Tab to the Config section, then Space/←→ to change), in
+`fusion.json`, or per call via the `panel_tools` / `max_tool_calls` tool parameters. The per-call
+`panel_tools` parameter accepts only the `none`/`readonly`/`all` modes — the explicit tool-name list
+is `fusion.json`-only. Tool output is truncated before re-entering the loop, and a cap/loop guard
+always forces a final text answer.
+
+> Note: enabling panel tools means **file contents (and command output for `all`) are sent to every
+> panel model's provider**. Only enable it where that's acceptable.
 
 ## How models are resolved
 

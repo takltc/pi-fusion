@@ -3,16 +3,7 @@
  */
 
 import { buildFusionTaskText, buildRecentContextFromEntries, normalizeContextTurns } from "../context.ts";
-
-function test(name: string, fn: () => void | Promise<void>) {
-	Promise.resolve(fn()).then(
-		() => console.log(`✓ ${name}`),
-		(err) => {
-			console.error(`✗ ${name}:`, err);
-			process.exitCode = 1;
-		},
-	);
-}
+import { test } from "./_harness.ts";
 
 function msg(role: "user" | "assistant" | "tool", text: string) {
 	return {

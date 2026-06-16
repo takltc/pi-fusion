@@ -4,16 +4,7 @@
 
 import { formatAnalysis, formatResult } from "../format.ts";
 import type { FusionAnalysis, FusionDetails } from "../types.ts";
-
-function test(name: string, fn: () => void | Promise<void>) {
-	Promise.resolve(fn()).then(
-		() => console.log(`✓ ${name}`),
-		(err) => {
-			console.error(`✗ ${name}:`, err);
-			process.exitCode = 1;
-		},
-	);
-}
+import { test } from "./_harness.ts";
 
 test("formatAnalysis includes all sections", () => {
 	const analysis: FusionAnalysis = {

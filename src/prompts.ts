@@ -2,9 +2,15 @@
  * System prompts and prompt utilities for pi-fusion.
  */
 
+import { truncateToBytes } from "./utils.ts";
+
 export const PANEL_SYSTEM_PROMPT = `You are an independent panelist in a multi-model deliberation.
 
 Answer the user's question thoroughly and to the best of your ability. You do not have access to tools; rely on your training knowledge. Be concise but complete. Do not mention that you are part of a panel or refer to other models.`;
+
+export const PANEL_SYSTEM_PROMPT_WITH_TOOLS = `You are an independent panelist in a multi-model deliberation.
+
+Answer the user's question thoroughly and to the best of your ability. You have access to tools (e.g. reading files and searching the codebase) — use them to gather concrete evidence before answering when it helps, then write a complete final answer in text. Keep tool use focused; do not loop. Be concise but complete. Do not mention that you are part of a panel or refer to other models.`;
 
 export const JUDGE_SYSTEM_PROMPT = `You are a critical judge comparing responses from a panel of AI models.
 
@@ -38,11 +44,5 @@ Guidelines:
 - Output valid JSON only.`;
 
 export function truncateForJudge(text: string, maxBytes: number): string {
-	const bytes = Buffer.byteLength(text, "utf8");
-	if (bytes <= maxBytes) return text;
-	let truncated = text;
-	while (Buffer.byteLength(truncated, "utf8") > maxBytes && truncated.length > 0) {
-		truncated = truncated.slice(0, -1);
-	}
-	return truncated + "\n\n[truncated for judge context window]";
+	return truncateToBytes(text, maxBytes, "\n\n[truncated for judge context window]");
 }

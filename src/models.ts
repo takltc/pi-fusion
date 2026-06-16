@@ -4,7 +4,7 @@
 
 import type { Api, Model } from "@earendil-works/pi-ai";
 import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
-import { MAX_PANEL_MODELS_HARD_LIMIT } from "./config.ts";
+import { DEFAULT_MAX_PANEL_MODELS, MAX_PANEL_MODELS_HARD_LIMIT } from "./config.ts";
 
 export function modelDisplay(model: Model<Api>): string {
 	return `${model.provider}/${model.id}`;
@@ -99,7 +99,7 @@ export async function resolvePanelAndJudge(
 ): Promise<ResolveResult> {
 	const warnings: string[] = [];
 	const configuredMaxPanel = Math.min(
-		options.configMaxPanelModels ?? 3,
+		options.configMaxPanelModels ?? DEFAULT_MAX_PANEL_MODELS,
 		MAX_PANEL_MODELS_HARD_LIMIT,
 	);
 	const sessionMaxPanel = MAX_PANEL_MODELS_HARD_LIMIT;

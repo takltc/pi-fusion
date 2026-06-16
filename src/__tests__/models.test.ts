@@ -3,32 +3,7 @@
  */
 
 import { modelDisplay, resolvePanelAndJudge, selectDiversePanel } from "../models.ts";
-import type { Api, Model } from "../types.ts";
-
-function test(name: string, fn: () => void | Promise<void>) {
-	Promise.resolve(fn()).then(
-		() => console.log(`✓ ${name}`),
-		(err) => {
-			console.error(`✗ ${name}:`, err);
-			process.exitCode = 1;
-		},
-	);
-}
-
-function fakeModel(provider: string, id: string): Model<Api> {
-	return {
-		id,
-		name: id,
-		api: "openai-completions" as Api,
-		provider,
-		baseUrl: "https://example.com",
-		reasoning: false,
-		input: ["text"],
-		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-		contextWindow: 128000,
-		maxTokens: 4096,
-	};
-}
+import { fakeModel, test } from "./_harness.ts";
 
 test("modelDisplay formats provider/id", () => {
 	const display = modelDisplay(fakeModel("anthropic", "claude-sonnet-4-5"));

@@ -11,47 +11,33 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { type AutocompleteItem, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
 	DEFAULT_MAX_COMPLETION_TOKENS,
+	DEFAULT_MAX_TOOL_CALLS,
 	DEFAULT_TEMPERATURE,
 	generateConfigExample,
-	MAX_PANEL_MODELS_HARD_LIMIT,
+	loadConfig,
+	MAX_TOOL_CALLS,
+	MIN_TOOL_CALLS,
 } from "./config.ts";
 import { buildRecentContextFromEntries, type FusionContextMode, normalizeContextTurns } from "./context.ts";
 import { resolveFusionModels, runFusion } from "./fusion.ts";
 import { modelDisplay } from "./models.ts";
+import { clampMaxToolCalls, isMutatingSelection, selectionLabel } from "./tools.ts";
 import { selectFusionSetup, type FusionMode, type FusionSetupState } from "./ui.ts";
 import { formatResult } from "./format.ts";
-import type { FusionOptions } from "./types.ts";
+import type { FusionOptions, ToolMode } from "./types.ts";
 const FusionParams = Type.Object(
 	{
 		prompt: Type.String({
 			description:
 				"The question, task, or topic to analyze. Be specific enough for independent models to answer.",
 		}),
-		analysis_models: Type.Optional(
-			Type.Array(
-				Type.String({
-					description:
-						"Optional panel model identifiers in provider/id form (e.g. anthropic/claude-sonnet-4-5). Overrides fusion.json for this call.",
-				}),
-				{ minItems: 1, maxItems: MAX_PANEL_MODELS_HARD_LIMIT },
-			),
-		),
-		model: Type.Optional(
-			Type.String({
-				description:
-					"Optional judge model identifier in provider/id form. OpenRouter-compatible parameter name.",
-			}),
-		),
-		judge_model: Type.Optional(
-			Type.String({
-				description:
-					"Optional judge model identifier in provider/id form. Backward-compatible alias for model.",
-			}),
-		),
+		// Panel and judge models are NOT tool parameters: they are configured by the user
+		// via /fusion-setup (session) or fusion.json, and always take precedence. The tool
+		// must not choose panel/judge models.
 		max_completion_tokens: Type.Optional(
 			Type.Integer({
 				description: "Max tokens for each panel response and the judge analysis.",
@@ -82,6 +68,24 @@ const FusionParams = Type.Object(
 				minimum: 1,
 				maximum: 10,
 				default: 4,
+			}),
+		),
+		panel_tools: Type.Optional(
+			Type.Union([
+				Type.Literal("none"),
+				Type.Literal("readonly"),
+				Type.Literal("all"),
+			], {
+				description:
+					"Panel tool access for this call: 'none' (default), 'readonly' (read/grep/find/ls), or 'all' (adds bash/edit/write; requires prior consent or it downgrades to read-only).",
+			}),
+		),
+		max_tool_calls: Type.Optional(
+			Type.Integer({
+				description: "Max tool-call steps per panel model when tools are enabled (1–100). Default 8.",
+				minimum: MIN_TOOL_CALLS,
+				maximum: MAX_TOOL_CALLS,
+				default: DEFAULT_MAX_TOOL_CALLS,
 			}),
 		),
 	},
@@ -131,11 +135,26 @@ function modeLabel(mode: FusionMode): string {
 function fusionFooterText(selectedIds: Set<string>, judgeId: string | undefined, mode: FusionMode = "available"): string | undefined {
 	if (selectedIds.size === 0) return mode === "off" ? "Fusion off" : undefined;
 	const panel = Array.from(selectedIds);
-	const judge = judgeId && selectedIds.has(judgeId) ? judgeId : panel[0];
+	const judge = judgeId ?? panel[0];
 	return `${modeLabel(mode)} • ${panel.length} panel • judge ${judge}`;
 }
 
-function installFusionFooter(
+/** Footer/status suffix describing panel tool access, when enabled. */
+function toolsSuffix(state: FusionSetupState | undefined): string {
+	const sel = state?.panelTools;
+	if (!sel || sel === "none") return "";
+	return ` • tools: ${selectionLabel(sel)}·${clampMaxToolCalls(state?.maxToolCalls)}${isMutatingSelection(sel) ? " ⚠" : ""}`;
+}
+
+/** Human-readable tools line for /fusion-status. */
+function toolsStatusLine(state: FusionSetupState | undefined): string {
+	const sel = state?.panelTools;
+	if (!sel || sel === "none") return "Tools: off";
+	const calls = clampMaxToolCalls(state?.maxToolCalls);
+	return `Tools: ${selectionLabel(sel)} (max ${calls}${isMutatingSelection(sel) ? ", panel serialized" : ""})`;
+}
+
+function updateStatus(
 	pi: ExtensionAPI,
 	ctx: ExtensionContext,
 	selectedIds: Set<string>,
@@ -145,7 +164,8 @@ function installFusionFooter(
 	ctx.ui.setStatus("fusion", undefined);
 	ctx.ui.setWidget("fusion-panel", undefined);
 
-	const fusionText = fusionFooterText(selectedIds, judgeId, mode);
+	const baseText = fusionFooterText(selectedIds, judgeId, mode);
+	const fusionText = baseText ? baseText + toolsSuffix(effectiveDisplayState(ctx)) : baseText;
 	if (!fusionText) {
 		ctx.ui.setFooter(undefined);
 		return;
@@ -216,22 +236,21 @@ function installFusionFooter(
 	});
 }
 
-function updateStatus(
+function persistSessionState(
 	pi: ExtensionAPI,
-	ctx: ExtensionContext,
 	selectedIds: Set<string>,
 	judgeId: string | undefined,
 	mode: FusionMode = "available",
+	tools: Pick<FusionSetupState, "panelTools" | "maxToolCalls" | "toolsConsented"> = {},
 ) {
-	installFusionFooter(pi, ctx, selectedIds, judgeId, mode);
-}
-
-function persistSessionState(pi: ExtensionAPI, selectedIds: Set<string>, judgeId: string | undefined, mode: FusionMode = "available") {
 	pi.appendEntry("fusion-state", {
 		selectedIds: Array.from(selectedIds),
 		judgeId,
 		enabled: mode === "forced",
 		mode,
+		panelTools: tools.panelTools,
+		maxToolCalls: tools.maxToolCalls,
+		toolsConsented: tools.toolsConsented,
 		timestamp: Date.now(),
 	});
 }
@@ -241,23 +260,63 @@ function restoreSessionState(ctx: ExtensionContext): FusionSetupState | undefine
 	for (let i = entries.length - 1; i >= 0; i--) {
 		const entry = entries[i];
 		if (entry.type === "custom" && entry.customType === "fusion-state" && "data" in entry && entry.data) {
-			const data = entry.data as { selectedIds?: string[]; judgeId?: string; enabled?: boolean; mode?: FusionMode };
+			const data = entry.data as {
+				selectedIds?: string[];
+				judgeId?: string;
+				enabled?: boolean;
+				mode?: FusionMode;
+				panelTools?: ToolMode;
+				maxToolCalls?: number;
+				toolsConsented?: boolean;
+			};
 			const mode = normalizeMode(data);
 			return {
 				selectedIds: new Set(data.selectedIds ?? []),
 				judgeId: data.judgeId,
 				enabled: mode === "forced",
 				mode,
+				panelTools: data.panelTools,
+				maxToolCalls: data.maxToolCalls,
+				toolsConsented: data.toolsConsented,
 			};
 		}
 	}
 	return undefined;
 }
 
+/**
+ * What to show in the footer/status: the session selection if present, otherwise
+ * the `fusion.json` config (so a configured panel shows without running /fusion-setup).
+ * Returns undefined when nothing is configured at all.
+ */
+function effectiveDisplayState(ctx: ExtensionContext): FusionSetupState | undefined {
+	const session = restoreSessionState(ctx);
+	if (session?.selectedIds.size || normalizeMode(session) === "off") return session;
+	const cfg = loadConfig(ctx.cwd, ctx.isProjectTrusted());
+	if ((cfg.panel && cfg.panel.length > 0) || cfg.judge) {
+		return {
+			selectedIds: new Set(cfg.panel ?? []),
+			judgeId: cfg.judge,
+			mode: "available",
+			panelTools: typeof cfg.panelTools === "string" ? cfg.panelTools : undefined,
+			maxToolCalls: cfg.maxToolCalls,
+		};
+	}
+	return session;
+}
+
 function sessionFusionOptions(ctx: ExtensionContext): FusionOptions {
 	const sessionState = restoreSessionState(ctx);
-	if (!sessionState?.selectedIds.size) return {};
+	// Only contribute the session tool mode when it's an explicit non-"none" choice,
+	// so the default "none" doesn't mask a fusion.json panelTools setting.
+	const tools: FusionOptions = {
+		panel_tools:
+			sessionState?.panelTools && sessionState.panelTools !== "none" ? sessionState.panelTools : undefined,
+		max_tool_calls: sessionState?.maxToolCalls,
+	};
+	if (!sessionState?.selectedIds.size) return tools;
 	return {
+		...tools,
 		analysis_models: Array.from(sessionState.selectedIds),
 		model: sessionState.judgeId ?? Array.from(sessionState.selectedIds)[0],
 	};
@@ -290,30 +349,51 @@ function buildInitialState(
 		judgeId: sessionState?.judgeId ?? resolvedJudge.display,
 		enabled: normalizeMode(sessionState) === "forced",
 		mode: normalizeMode(sessionState),
+		panelTools: sessionState?.panelTools ?? "none",
+		maxToolCalls: sessionState?.maxToolCalls ?? DEFAULT_MAX_TOOL_CALLS,
+		toolsConsented: sessionState?.toolsConsented ?? false,
 	};
 }
 
 type ModelWithDisplay = { display: string };
 
-function applySetup(
+async function applySetup(
 	pi: ExtensionAPI,
 	ctx: ExtensionContext,
 	state: FusionSetupState,
 	warnings: string[],
-): boolean {
+): Promise<boolean> {
 	if (state.selectedIds.size === 0) {
 		ctx.ui.notify("At least one panel model must be selected", "error");
 		return false;
 	}
-	if (!state.judgeId || !state.selectedIds.has(state.judgeId)) {
-		state.judgeId = Array.from(state.selectedIds)[0];
+	// Judge is independent of the panel: it may be unset (auto) or a non-panel model.
+
+	// Mutating panel tools require explicit consent. Without it, downgrade to read-only.
+	let toolsConsented = state.toolsConsented ?? false;
+	if (isMutatingSelection(state.panelTools) && !toolsConsented) {
+		const ok = await ctx.ui.confirm(
+			"Enable mutating panel tools?",
+			"Panel models will be able to run bash and edit/write files in this project. The panel runs serialized (one model at a time). Continue?",
+		);
+		if (ok) {
+			toolsConsented = true;
+		} else {
+			state.panelTools = "readonly";
+			warnings.push("Mutating tools declined; using read-only.");
+		}
 	}
+	state.toolsConsented = toolsConsented;
+
 	const mode = normalizeMode(state);
-	persistSessionState(pi, state.selectedIds, state.judgeId, mode);
+	persistSessionState(pi, state.selectedIds, state.judgeId, mode, state);
 	updateStatus(pi, ctx, state.selectedIds, state.judgeId, mode);
 	const panelNames = Array.from(state.selectedIds).join(", ");
+	const toolsNote = state.panelTools && state.panelTools !== "none"
+		? `\nTools: ${selectionLabel(state.panelTools)} (max ${clampMaxToolCalls(state.maxToolCalls)})`
+		: "";
 	ctx.ui.notify(
-		`Panel: ${panelNames}\nJudge: ${state.judgeId}${warnings.length ? "\nWarnings: " + warnings.join("; ") : ""}`,
+		`Panel: ${panelNames}\nJudge: ${state.judgeId}${toolsNote}${warnings.length ? "\nWarnings: " + warnings.join("; ") : ""}`,
 		"info",
 	);
 	return true;
@@ -351,11 +431,15 @@ export default function (pi: ExtensionAPI) {
 			const contextText = contextMode === "recent"
 				? buildRecentContextFromEntries(ctx.sessionManager.getBranch(), normalizeContextTurns(params.context_turns))
 				: undefined;
+			// Panel/judge come ONLY from the user's session selection (then fusion.json,
+			// then auto-selection inside runFusion). The tool/LLM cannot set models.
 			const options: FusionOptions = {
-				analysis_models: params.analysis_models ?? sessionOptions.analysis_models,
-				model: params.model ?? params.judge_model ?? sessionOptions.model,
+				analysis_models: sessionOptions.analysis_models,
+				model: sessionOptions.model,
 				max_completion_tokens: params.max_completion_tokens,
 				temperature: params.temperature,
+				panel_tools: (params.panel_tools as ToolMode | undefined) ?? sessionOptions.panel_tools,
+				max_tool_calls: params.max_tool_calls ?? sessionOptions.max_tool_calls,
 				context_text: contextText,
 			};
 			return runFusion(
@@ -365,6 +449,8 @@ export default function (pi: ExtensionAPI) {
 				params.prompt,
 				ctx.isProjectTrusted(),
 				options,
+				ctx,
+				sessionState?.toolsConsented ?? false,
 				signal,
 				onUpdate,
 			);
@@ -407,9 +493,9 @@ export default function (pi: ExtensionAPI) {
 				const judgeId = sessionState?.judgeId;
 				const currentMode = normalizeMode(sessionState);
 				const nextMode = modeCommand ?? (currentMode === "forced" ? "available" : "forced");
-				persistSessionState(pi, selectedIds, judgeId, nextMode);
+				persistSessionState(pi, selectedIds, judgeId, nextMode, sessionState ?? {});
 				updateStatus(pi, ctx, selectedIds, judgeId, nextMode);
-				const summary = fusionFooterText(selectedIds, judgeId, nextMode) ?? modeLabel(nextMode);
+				const summary = (fusionFooterText(selectedIds, judgeId, nextMode) ?? modeLabel(nextMode)) + toolsSuffix(sessionState);
 				if (ctx.mode === "print") console.log(summary);
 				else ctx.ui.notify(summary, "info");
 				return;
@@ -459,6 +545,8 @@ export default function (pi: ExtensionAPI) {
 					prompt,
 					ctx.isProjectTrusted(),
 					overrides,
+					ctx,
+					sessionState?.toolsConsented ?? false,
 					ctx.signal,
 				);
 				const failed = (result.details.failed_models ?? []).map((f) => ({
@@ -524,7 +612,7 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 
-			if (!applySetup(pi, ctx, state, warnings)) return;
+			if (!(await applySetup(pi, ctx, state, warnings))) return;
 		},
 	});
 
@@ -537,8 +625,23 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 
-			const configPath = join(ctx.cwd, ".pi", "fusion.json");
-			const example = generateConfigExample();
+			const configDir = join(ctx.cwd, ".pi");
+			const configPath = join(configDir, "fusion.json");
+			// Seed the template from the user's actually-authed models so it works
+			// immediately (no "model not authed" warnings from placeholder ids).
+			let example: ReturnType<typeof generateConfigExample>;
+			try {
+				const { panel, judge } = await resolveFusionModels(
+					ctx.cwd,
+					ctx.modelRegistry,
+					ctx.model,
+					ctx.isProjectTrusted(),
+					{},
+				);
+				example = generateConfigExample(panel.map(modelDisplay), modelDisplay(judge));
+			} catch {
+				example = generateConfigExample();
+			}
 
 			if (existsSync(configPath)) {
 				const overwrite = await ctx.ui.confirm(
@@ -551,6 +654,7 @@ export default function (pi: ExtensionAPI) {
 				}
 			}
 
+			mkdirSync(configDir, { recursive: true });
 			writeFileSync(configPath, JSON.stringify(example, null, 2) + "\n", "utf8");
 
 			const openConfig = await ctx.ui.confirm(
@@ -567,17 +671,20 @@ export default function (pi: ExtensionAPI) {
 	pi.registerCommand("fusion-status", {
 		description: "Show the current fusion mode, panel, and judge",
 		handler: async (_args, ctx) => {
-			const state = restoreSessionState(ctx);
+			const session = restoreSessionState(ctx);
+			const state = effectiveDisplayState(ctx);
+			const fromConfig = !session?.selectedIds.size && !!state?.selectedIds.size;
 			const lines: string[] = [];
 			if (!state?.selectedIds.size) {
-				lines.push(normalizeMode(state) === "off" ? "Fusion is off." : "Fusion is not set up. Run /fusion-setup.");
+				lines.push(normalizeMode(state) === "off" ? "Fusion is off." : "Fusion is not set up. Run /fusion-setup or add a fusion.json.");
 			} else {
 				const mode = normalizeMode(state);
 				lines.push(`Mode: ${mode}`);
-				lines.push(`Panel: ${Array.from(state.selectedIds).join(", ")}`);
+				lines.push(`Panel: ${Array.from(state.selectedIds).join(", ")}${fromConfig ? "  (from fusion.json)" : ""}`);
 				lines.push(`Judge: ${state.judgeId ?? Array.from(state.selectedIds)[0]}`);
+				lines.push(toolsStatusLine(state));
 				lines.push("");
-				lines.push("Use /fusion to toggle available/forced, /fusion off to disable, /fusion <prompt> to force once.");
+				lines.push("Use /fusion to toggle available/forced, /fusion off to disable, /fusion <prompt> to force once. Change panel tools with /fusion-setup.");
 				updateStatus(pi, ctx, state.selectedIds, state.judgeId, mode);
 			}
 			const text = lines.join("\n");
@@ -604,24 +711,15 @@ export default function (pi: ExtensionAPI) {
 		return { action: "transform", text: forceFusionPrompt(event.text), images: event.images };
 	});
 
-	pi.on("session_start", async (_event, ctx) => {
-		const state = restoreSessionState(ctx);
-		if (state?.selectedIds.size || normalizeMode(state) === "off") {
-			updateStatus(pi, ctx, state?.selectedIds ?? new Set(), state?.judgeId, normalizeMode(state));
+	// Refresh the footer whenever the session/model changes (pi.on is overloaded per
+	// event name, so register the shared handler for each rather than looping).
+	const refreshFooter = (ctx: ExtensionContext) => {
+		const state = effectiveDisplayState(ctx);
+		if (state && (state.selectedIds.size || normalizeMode(state) === "off")) {
+			updateStatus(pi, ctx, state.selectedIds, state.judgeId, normalizeMode(state));
 		}
-	});
-
-	pi.on("session_tree", async (_event, ctx) => {
-		const state = restoreSessionState(ctx);
-		if (state?.selectedIds.size || normalizeMode(state) === "off") {
-			updateStatus(pi, ctx, state?.selectedIds ?? new Set(), state?.judgeId, normalizeMode(state));
-		}
-	});
-
-	pi.on("model_select", async (_event, ctx) => {
-		const state = restoreSessionState(ctx);
-		if (state?.selectedIds.size || normalizeMode(state) === "off") {
-			updateStatus(pi, ctx, state?.selectedIds ?? new Set(), state?.judgeId, normalizeMode(state));
-		}
-	});
+	};
+	pi.on("session_start", async (_event, ctx) => refreshFooter(ctx));
+	pi.on("session_tree", async (_event, ctx) => refreshFooter(ctx));
+	pi.on("model_select", async (_event, ctx) => refreshFooter(ctx));
 }

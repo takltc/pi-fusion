@@ -3,21 +3,43 @@
  */
 
 import type { Api, Model } from "@earendil-works/pi-ai";
-import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
+import type { ExtensionContext, ModelRegistry } from "@earendil-works/pi-coding-agent";
 import {
 	applyDefaults,
-	DEFAULT_MAX_COMPLETION_TOKENS,
-	DEFAULT_MAX_PANEL_OUTPUT_TOKENS,
-	DEFAULT_TEMPERATURE,
 	loadConfig,
 	PANEL_CONCURRENCY,
+	type ResolvedFusionConfig,
 } from "./config.ts";
 import { buildFusionTaskText } from "./context.ts";
-import { callModelText, getTextContent } from "./llm.ts";
-import { modelDisplay, resolvePanelAndJudge, type ResolveResult } from "./models.ts";
-import { JUDGE_SYSTEM_PROMPT, PANEL_SYSTEM_PROMPT, truncateForJudge } from "./prompts.ts";
+import { callModelText, callModelWithTools, getTextContent } from "./llm.ts";
+import { modelDisplay, type ResolveOptions, resolvePanelAndJudge, type ResolveResult } from "./models.ts";
+import { JUDGE_SYSTEM_PROMPT, PANEL_SYSTEM_PROMPT, PANEL_SYSTEM_PROMPT_WITH_TOOLS, truncateForJudge } from "./prompts.ts";
+import {
+	clampMaxToolCalls,
+	isMutatingSelection,
+	MUTATING_TOOL_NAMES,
+	resolveToolDefs,
+	selectionLabel,
+	selectionToNames,
+} from "./tools.ts";
 import { extractJson, mapWithConcurrencyLimit } from "./utils.ts";
-import type { FusionAnalysis, FusionDetails, FusionOptions, FusionResult, PanelResult } from "./types.ts";
+import type { FusionAnalysis, FusionDetails, FusionOptions, FusionResult, PanelResult, ToolSelection } from "./types.ts";
+
+/** Build the panel/judge resolution options shared by resolveFusionModels and runFusion. */
+function buildResolveOptions(
+	config: ResolvedFusionConfig,
+	overrides: FusionOptions,
+	currentModel: Model<Api> | undefined,
+): ResolveOptions {
+	return {
+		sessionPanel: overrides.analysis_models,
+		sessionJudge: overrides.model ?? overrides.judge_model,
+		configPanel: config.panel,
+		configJudge: config.judge,
+		configMaxPanelModels: config.maxPanelModels,
+		currentModel,
+	};
+}
 
 export async function resolveFusionModels(
 	cwd: string,
@@ -26,16 +48,8 @@ export async function resolveFusionModels(
 	projectTrusted: boolean,
 	overrides: FusionOptions,
 ): Promise<ResolveResult> {
-	const baseConfig = loadConfig(cwd, projectTrusted);
-	const config = applyDefaults(baseConfig, overrides);
-	return resolvePanelAndJudge(registry, {
-		sessionPanel: overrides.analysis_models,
-		sessionJudge: overrides.model ?? overrides.judge_model,
-		configPanel: config.panel,
-		configJudge: config.judge,
-		configMaxPanelModels: config.maxPanelModels,
-		currentModel,
-	});
+	const config = applyDefaults(loadConfig(cwd, projectTrusted), overrides);
+	return resolvePanelAndJudge(registry, buildResolveOptions(config, overrides, currentModel));
 }
 
 export async function runFusion(
@@ -45,43 +59,80 @@ export async function runFusion(
 	prompt: string,
 	projectTrusted: boolean,
 	overrides: FusionOptions,
+	ctx: ExtensionContext,
+	consented: boolean,
 	signal: AbortSignal | undefined,
 	onUpdate?: (partial: { content: Array<{ type: "text"; text: string }>; details: unknown }) => void,
 ): Promise<FusionResult> {
-	const baseConfig = loadConfig(cwd, projectTrusted);
-	const config = applyDefaults(baseConfig, overrides);
+	const config = applyDefaults(loadConfig(cwd, projectTrusted), overrides);
 
-	const maxPanelOutputTokens = config.maxPanelOutputTokens ?? DEFAULT_MAX_PANEL_OUTPUT_TOKENS;
-	const maxCompletionTokens = config.maxCompletionTokens ?? DEFAULT_MAX_COMPLETION_TOKENS;
-	const temperature = config.temperature ?? DEFAULT_TEMPERATURE;
+	const maxPanelOutputTokens = config.maxPanelOutputTokens;
+	const maxCompletionTokens = config.maxCompletionTokens;
+	const temperature = config.temperature;
 	const taskText = buildFusionTaskText(prompt, overrides.context_text);
 
-	const { panel, judge, warnings } = await resolvePanelAndJudge(registry, {
-		sessionPanel: overrides.analysis_models,
-		sessionJudge: overrides.model ?? overrides.judge_model,
-		configPanel: config.panel,
-		configJudge: config.judge,
-		configMaxPanelModels: config.maxPanelModels,
-		currentModel,
-	});
+	const { panel, judge, warnings } = await resolvePanelAndJudge(
+		registry,
+		buildResolveOptions(config, overrides, currentModel),
+	);
+
+	// Resolve panel tools. Fail-closed: mutating tools without consent are stripped
+	// to the read-only subset. Mutating runs serialize the panel (concurrency 1).
+	let toolSelection: ToolSelection | undefined = config.panelTools;
+	const hasConsent = consented || config.panelToolsConsent === true;
+	if (isMutatingSelection(toolSelection) && !hasConsent) {
+		const readOnly = selectionToNames(toolSelection).filter(
+			(n) => !(MUTATING_TOOL_NAMES as readonly string[]).includes(n),
+		);
+		toolSelection = readOnly.length ? readOnly : "none";
+		warnings.push("Mutating panel tools require consent (run /fusion-setup or set panelToolsConsent in fusion.json); using read-only subset.");
+	}
+	const toolDefs = resolveToolDefs(toolSelection, cwd);
+	const toolsEnabled = toolDefs.length > 0;
+	const maxToolCalls = clampMaxToolCalls(config.maxToolCalls);
+	const mutating = isMutatingSelection(toolSelection);
+	const panelConcurrency = mutating ? 1 : PANEL_CONCURRENCY;
 
 	const panelModelNames = panel.map(modelDisplay);
 	const judgeName = modelDisplay(judge);
+	const toolsLabel = toolsEnabled ? ` | tools: ${selectionLabel(toolSelection)}·${maxToolCalls}${mutating ? " (serialized)" : ""}` : "";
 
 	onUpdate?.({
 		content: [
 			{
 				type: "text",
-				text: `Fusion panel: ${panelModelNames.join(", ")} | judge: ${judgeName}${warnings.length > 0 ? " | warnings: " + warnings.join("; ") : ""}`,
+				text: `Fusion panel: ${panelModelNames.join(", ")} | judge: ${judgeName}${toolsLabel}${warnings.length > 0 ? " | warnings: " + warnings.join("; ") : ""}`,
 			},
 		],
 		details: { phase: "resolving" },
 	});
 
-	// Run panel in parallel.
-	const rawPanelResults = await mapWithConcurrencyLimit(panel, PANEL_CONCURRENCY, async (model) => {
+	// Run panel (serialized when mutating tools are active).
+	const rawPanelResults = await mapWithConcurrencyLimit(panel, panelConcurrency, async (model): Promise<PanelResult> => {
 		const display = modelDisplay(model);
 		try {
+			if (toolsEnabled) {
+				const result = await callModelWithTools(
+					registry,
+					model,
+					PANEL_SYSTEM_PROMPT_WITH_TOOLS,
+					taskText,
+					maxPanelOutputTokens,
+					temperature,
+					signal,
+					toolDefs,
+					maxToolCalls,
+					ctx,
+				);
+				const content = getTextContent(result.message);
+				return {
+					model: display,
+					provider: model.provider,
+					id: model.id,
+					content,
+					tools: { turns: result.turns, tool_calls: result.toolCalls, capped: result.cappedOut },
+				};
+			}
 			const response = await callModelText(
 				registry,
 				model,
@@ -109,6 +160,7 @@ export async function runFusion(
 			failed_models: failed.map((f) => ({ model: f.model, error: f.error ?? "unknown error" })),
 			panel_models: panelModelNames,
 			judge_model: judgeName,
+			...(warnings.length > 0 ? { warnings } : {}),
 			error: "all panel models failed",
 			failure_reason: classifyAllPanelFailure(failed),
 		};
@@ -165,12 +217,16 @@ export async function runFusion(
 	const details: FusionDetails = {
 		status: "ok",
 		analysis,
-		responses: successful.map((r) => ({ model: r.model, content: r.content })),
+		responses: successful.map((r) => ({ model: r.model, content: r.content, ...(r.tools ? { tools: r.tools } : {}) })),
 		...(failed.length > 0
 			? { failed_models: failed.map((f) => ({ model: f.model, error: f.error ?? "unknown error" })) }
 			: {}),
 		panel_models: panelModelNames,
 		judge_model: judgeName,
+		...(toolsEnabled
+			? { panel_tools: { mode: selectionLabel(toolSelection), max_tool_calls: maxToolCalls, serialized: mutating } }
+			: {}),
+		...(warnings.length > 0 ? { warnings } : {}),
 	};
 
 	return { content: [{ type: "text", text: JSON.stringify(details, null, 2) }], details };
