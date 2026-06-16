@@ -6,16 +6,17 @@
 
 Multi-model deliberation for [pi](https://github.com/earendil-works), inspired by OpenRouter Fusion.
 
-pi-fusion runs your prompt against a panel of the models you're already authed for, then has a judge model compare their answers and return structured analysis. Your active model uses that analysis to write a better, less-blind-spotted final answer. It works out of the box with no configuration.
+pi-fusion sends your prompt to several of the models you're already authed for, then has a judge model compare their answers. The judge's analysis (where the models agree, disagree, or each missed something) goes back to your active model, which writes the final answer. It needs no configuration to start.
 
-## Why use it
+## When it helps
 
-- **Catch blind spots before they cost you.** A single model has consistent gaps; a panel of different models from different providers rarely shares the same ones. Fusion surfaces what *no* model addressed so you find out before you ship.
-- **Know what's high-confidence.** When several independent models agree, that consensus is worth more than one model's confident guess. Fusion flags it explicitly.
-- **See disagreement instead of averaging it away.** Where models contradict each other, you get each one's stance: the signal that a question is genuinely contested, not settled.
-- **Zero setup, on demand.** No config needed. Fusion auto-selects a diverse set of your authed models and, by default, only runs when the active model decides a task is worth it, so normal prompts stay fast.
+Running several models is slower and costs more tokens than one, so it's worth it when a second or third opinion changes the outcome: research, architecture trade-offs, critiques, and decisions that are expensive to get wrong. For routine edits it adds little. By default fusion only runs when the active model judges a task worth it, so most prompts are unaffected.
 
-Best for research, architecture trade-offs, critiques, and decisions where being wrong is expensive. Skip it for routine edits, and by default it skips itself.
+What you get from a panel that you don't from one model:
+
+- Agreement across independent models is a stronger signal than one model's confidence.
+- Disagreement is reported per model rather than averaged away, so you can see what's actually contested.
+- Gaps that one model shares but a panel from different providers usually doesn't are surfaced as blind spots.
 
 ## What it does
 
@@ -170,7 +171,7 @@ No. By default the mode is `available`, so the active model only calls fusion wh
 
 **Does it cost more tokens / money?**
 
-Yes, when it runs. Each panel model is a separate completion, plus one judge call. That's the trade for catching blind spots on high-stakes questions, which is why it's opt-in per task by default. Tune cost with `maxPanelModels`, `maxPanelOutputTokens`, and `maxCompletionTokens`.
+Yes, when it runs. Each panel model is a separate completion, plus one judge call. This is why it's opt-in per task by default. Tune cost with `maxPanelModels`, `maxPanelOutputTokens`, and `maxCompletionTokens`.
 
 **Is my code or prompt sent to other providers?**
 
