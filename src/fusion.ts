@@ -23,7 +23,17 @@ import {
 	selectionToNames,
 } from "./tools.ts";
 import { extractJson, mapWithConcurrencyLimit } from "./utils.ts";
-import type { FusionAnalysis, FusionDetails, FusionOptions, FusionResult, PanelResult, ToolSelection } from "./types.ts";
+import type { FusionAnalysis, FusionDetails, FusionOptions, FusionResult, PanelResult, PanelToolUsage, ToolSelection } from "./types.ts";
+
+/**
+ * Classify a panel's final text. Blank output (a model that gathered tools but never
+ * produced an answer, or hit the loop guard / token budget with nothing to show) is a
+ * FAILURE, not a successful-but-empty response — so the judge only synthesizes real answers.
+ */
+export function emptyPanelError(content: string, capped: boolean): string | undefined {
+	if (content.trim()) return undefined;
+	return capped ? "no text answer (tool-call budget or loop guard hit)" : "empty response";
+}
 
 /** Build the panel/judge resolution options shared by resolveFusionModels and runFusion. */
 function buildResolveOptions(
@@ -109,8 +119,10 @@ export async function runFusion(
 
 	// Run panel (serialized when mutating tools are active).
 	const rawPanelResults = await mapWithConcurrencyLimit(panel, panelConcurrency, async (model): Promise<PanelResult> => {
-		const display = modelDisplay(model);
+		const base = { model: modelDisplay(model), provider: model.provider, id: model.id };
 		try {
+			let content: string;
+			let tools: PanelToolUsage | undefined;
 			if (toolsEnabled) {
 				const result = await callModelWithTools(
 					registry,
@@ -124,29 +136,18 @@ export async function runFusion(
 					maxToolCalls,
 					ctx,
 				);
-				const content = getTextContent(result.message);
-				return {
-					model: display,
-					provider: model.provider,
-					id: model.id,
-					content,
-					tools: { turns: result.turns, tool_calls: result.toolCalls, capped: result.cappedOut },
-				};
+				content = getTextContent(result.message);
+				tools = { turns: result.turns, tool_calls: result.toolCalls, capped: result.cappedOut };
+			} else {
+				const response = await callModelText(registry, model, PANEL_SYSTEM_PROMPT, taskText, maxPanelOutputTokens, temperature, signal);
+				content = getTextContent(response);
 			}
-			const response = await callModelText(
-				registry,
-				model,
-				PANEL_SYSTEM_PROMPT,
-				taskText,
-				maxPanelOutputTokens,
-				temperature,
-				signal,
-			);
-			const content = getTextContent(response);
-			return { model: display, provider: model.provider, id: model.id, content };
+			// Empty output is a failure, not a blank "success" — keep it out of the judge.
+			const error = emptyPanelError(content, tools?.capped ?? false);
+			return { ...base, content: error ? "" : content, ...(error ? { error } : {}), ...(tools ? { tools } : {}) };
 		} catch (err) {
 			const message = err instanceof Error ? err.message : String(err);
-			return { model: display, provider: model.provider, id: model.id, content: "", error: message };
+			return { ...base, content: "", error: message };
 		}
 	});
 

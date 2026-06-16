@@ -109,7 +109,8 @@ export async function callModelWithTools(
 	const toolCalls: Array<{ name: string; ok: boolean }> = [];
 	let turns = 0;
 	let used = 0;
-	const keyCounts = new Map<string, number>();
+	let lastKey: string | undefined;
+	let repeatRun = 0;
 	let errorStreak = 0;
 
 	while (true) {
@@ -137,14 +138,16 @@ export async function callModelWithTools(
 			toolCalls.push({ name: tc.name, ok });
 			onToolEvent?.({ name: tc.name, turn: turns, ok });
 
-			// Circuit breaker: same call repeated 3× (catches oscillation, not just
-			// consecutive repeats) or 3 errors in a row. The cap is the hard bound;
-			// this just short-circuits pathological loops sooner.
+			// Circuit breaker for TIGHT stuck-loops only: the exact same call (tool + args)
+			// 3× in a row, or 3 consecutive errors. The key includes arguments, so varied
+			// context-gathering — even many calls of the same tool with different paths/queries
+			// — never trips it; only a model spinning on the identical call does. maxToolCalls
+			// remains the hard upper bound.
 			const key = `${tc.name}:${JSON.stringify(tc.arguments)}`;
-			const seen = (keyCounts.get(key) ?? 0) + 1;
-			keyCounts.set(key, seen);
+			repeatRun = key === lastKey ? repeatRun + 1 : 1;
+			lastKey = key;
 			errorStreak = ok ? 0 : errorStreak + 1;
-			if (seen >= 3 || errorStreak >= 3) {
+			if (repeatRun >= 3 || errorStreak >= 3) {
 				forceFinalize = true;
 			}
 		}
