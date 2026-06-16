@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.7.4
+
+- The `fusion` tool no longer exposes `panel_tools`, `max_tool_calls`, `temperature`, or `max_completion_tokens` as parameters. The invoking model was using them to override the user's `/fusion-setup` choice (e.g. setting `max_tool_calls` to 25 over a configured 100). All such config is now user-only (session via `/fusion-setup`, or `fusion.json`); the tool takes only the prompt and the conversation-context controls.
+- Failed panels now carry their tool-loop usage (`turns`, `tool_calls`, `capped`) in `failed_models`, so diagnostics/session traces show how far a model got before returning empty (not just the error string).
+
 ## 0.7.3
 
 - When a panel model hits the tool-call limit (or the loop guard), it's now told via the system prompt to write its final answer from what it gathered — some models otherwise went silent when tools were removed, returning empty.
