@@ -16,7 +16,7 @@ What you get from a panel that you don't from one model:
 
 - Agreement across independent models is a stronger signal than one model's confidence.
 - Disagreement is reported per model rather than averaged away, so you can see what's actually contested.
-- A single model has consistent blind spots. Models from different providers rarely miss the same things, so the panel catches points your active model would have skipped.
+- A single model has consistent blind spots. Models from different providers tend not to share them, so the panel covers points any one model misses.
 
 ## What it does
 
