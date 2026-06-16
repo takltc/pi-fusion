@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.7.1
+
+- Add a README banner and a package gallery image (`pi.image`) so listings show artwork.
+- CI/release workflows bumped to `actions/checkout@v6` + `actions/setup-node@v6` (Dependabot).
+
 ## 0.7.0
 
 - **Panel/judge are now always user configuration.** The `fusion` tool no longer exposes `analysis_models`/`model`/`judge_model` parameters, so the invoking model can't auto-pick (or override) your models. Panel/judge come from `/fusion-setup` → `fusion.json` → auto-selection. (Also removes spurious "model not authed" warnings caused by the model guessing models.)
