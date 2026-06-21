@@ -132,7 +132,8 @@ Generate a project-local template with `/fusion-init`, or write one by hand:
   "maxCompletionTokens": 4096,
   "temperature": 0.3,
   "panelTools": "none",
-  "maxToolCalls": 16
+  "maxToolCalls": 16,
+  "footerDisplay": "full"
 }
 ```
 
@@ -147,6 +148,7 @@ Generate a project-local template with `/fusion-init`, or write one by hand:
 | `panelTools` | `"none"` | Panel tool access: `"none"`, `"readonly"` (read/grep/find/ls), `"all"` (adds bash/edit/write), or an explicit tool-name list (e.g. `["read", "grep"]`). The list form is **config-file only**. |
 | `maxToolCalls` | 16 | Max tool-call steps **per panel model** when tools are on (1–100). Models batch several calls per turn, so this is the per-agent budget; total ≈ panel size × this. |
 | `panelToolsConsent` | `false` | Pre-authorize mutating tools in non-interactive (`-p`) runs. |
+| `footerDisplay` | `"full"` | Footer verbosity: `"full"` keeps the current mode/panel/judge/tools text, `"compact"` shows only mode + panel count, and `"off"` hides pi-fusion's footer text. |
 
 **Precedence.** Everything resolves session selection (`/fusion-setup`) → `fusion.json` → defaults/auto-selection. The invoking model can't override any of it (the tool takes only the prompt + optional context controls).
 
@@ -159,7 +161,7 @@ By default panel models answer in a single turn with no tools. Enable tools to l
 - **`readonly`** (`read`, `grep`, `find`, `ls`): safe; no mutation.
 - **`all`**: adds `bash`, `edit`, `write`. **Off by default** and requires consent (the `/fusion-setup` picker prompts; non-interactive runs need `"panelToolsConsent": true`). Because several models run concurrently, mutating runs **serialize the panel** so they can't clobber each other's writes. Without consent, `all` downgrades to read-only.
 
-Set tools in `/fusion-setup` (Config section) or in `fusion.json` (`panelTools`, `maxToolCalls`). These are user configuration only — the invoking model has no tool parameters to override them.
+Set tools and footer display in `/fusion-setup` (Config section) or in `fusion.json` (`panelTools`, `maxToolCalls`, `footerDisplay`). These are user configuration only — the invoking model has no tool parameters to override them.
 
 > **Note:** enabling panel tools means **file contents (and command output for `all`) are sent to every panel model's provider**. Only enable it where that's acceptable.
 
@@ -201,7 +203,7 @@ Yes. `/fusion-setup` is interactive-only, so configure the panel/judge via `fusi
 
 | Command | What it does |
 |---------|--------------|
-| `/fusion-setup` | Choose the panel and judge in an interactive picker (interactive mode only). |
+| `/fusion-setup` | Choose the panel, judge, panel tools, and footer display in an interactive picker (interactive mode only). |
 | `/fusion on` \| `available` \| `off` | Set the session mode (aliases: `forced`, `auto`, `disable`). |
 | `/fusion` | With no argument, toggle between `available` and `forced`. |
 | `/fusion <prompt>` | Force fusion for a single prompt, then answer normally. |
@@ -214,7 +216,7 @@ Yes. `/fusion-setup` is interactive-only, so configure the panel/judge via `fusi
 Two sections, **Models** and **Config**, with the live panel/judge selection shown at the top. **Tab** switches sections; **Enter** saves, **Esc** cancels.
 
 - **Models:** `↑/↓` move · `p` toggle panel · `j` toggle judge (independent of the panel; can be any model or left unset for auto) · `c` clear panel · `/` search.
-- **Config:** `↑/↓` move · `Space` / `←→` change a value. Settings: **Panel tools** (`none` → `readonly` → `all`) and **Max tool calls** (`4`/`8`/`12`/`25`/`50`/`100`).
+- **Config:** `↑/↓` move · `Space` / `←→` change a value. Settings: **Panel tools** (`none` → `readonly` → `all`), **Max tool calls** (`4`/`8`/`12`/`16`/`25`/`50`/`100`), and **Footer** (`full` → `compact` → `off`).
 
 Selections (panel, judge, mode) are saved in the session and restored on `/resume`.
 

@@ -78,5 +78,6 @@ export function generateConfigExample(panel?: string[], judge?: string): FusionC
 		temperature: DEFAULT_TEMPERATURE,
 		panelTools: "none",
 		maxToolCalls: DEFAULT_MAX_TOOL_CALLS,
+		footerDisplay: "full",
 	};
 }

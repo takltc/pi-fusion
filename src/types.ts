@@ -9,6 +9,7 @@ export type { Api, Model };
 /** Named panel tool bundles, or an explicit list of tool names. */
 export type ToolMode = "none" | "readonly" | "all";
 export type ToolSelection = ToolMode | string[];
+export type FooterDisplay = "off" | "compact" | "full";
 
 export interface FusionConfig {
 	/** Explicit panel model identifiers, e.g. ["anthropic/claude-sonnet-4-5"]. */
@@ -29,6 +30,8 @@ export interface FusionConfig {
 	maxToolCalls?: number;
 	/** Non-interactive consent for mutating tools (bash/edit/write) — required in print/no-UI mode. */
 	panelToolsConsent?: boolean;
+	/** Footer verbosity: "full" (default), "compact", or "off". */
+	footerDisplay?: FooterDisplay;
 }
 
 /** A FusionConfig after `applyDefaults`: the numeric knobs are guaranteed present. */
@@ -100,4 +103,3 @@ export interface FusionDetails {
 	error?: string;
 	failure_reason?: "all_panels_failed" | "insufficient_credits" | "rate_limited" | "unexpected_error";
 }
-

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.5
+
+- Added `footerDisplay` config (`"full"`, `"compact"`, or `"off"`) so power users can shrink or hide pi-fusion's footer text while keeping commands like `/fusion-status` available. Requested by @cosmicnag in #6.
+
 ## 0.7.4
 
 - The `fusion` tool no longer exposes `panel_tools`, `max_tool_calls`, `temperature`, or `max_completion_tokens` as parameters. The invoking model was using them to override the user's `/fusion-setup` choice (e.g. setting `max_tool_calls` to 25 over a configured 100). All such config is now user-only (session via `/fusion-setup`, or `fusion.json`); the tool takes only the prompt and the conversation-context controls.

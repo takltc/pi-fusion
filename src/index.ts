@@ -17,6 +17,7 @@ import {
 	DEFAULT_MAX_TOOL_CALLS,
 	generateConfigExample,
 	loadConfig,
+	type FusionConfig,
 } from "./config.ts";
 import { buildRecentContextFromEntries, type FusionContextMode, normalizeContextTurns } from "./context.ts";
 import { resolveFusionModels, runFusion } from "./fusion.ts";
@@ -24,7 +25,7 @@ import { modelDisplay } from "./models.ts";
 import { clampMaxToolCalls, isMutatingSelection, selectionLabel } from "./tools.ts";
 import { selectFusionSetup, type FusionMode, type FusionSetupState } from "./ui.ts";
 import { formatResult } from "./format.ts";
-import type { FusionOptions, ToolMode } from "./types.ts";
+import type { FooterDisplay, FusionOptions, ToolMode } from "./types.ts";
 const FusionParams = Type.Object(
 	{
 		prompt: Type.String({
@@ -97,9 +98,29 @@ function modeLabel(mode: FusionMode): string {
 	return "Fusion available";
 }
 
-function fusionFooterText(selectedIds: Set<string>, judgeId: string | undefined, mode: FusionMode = "available"): string | undefined {
+export function normalizeFooterDisplay(value: unknown): FooterDisplay {
+	return value === "off" || value === "compact" || value === "full" ? value : "full";
+}
+
+function effectiveFooterDisplay(ctx: ExtensionContext): FooterDisplay {
+	const sessionDisplay = restoreSessionState(ctx)?.footerDisplay;
+	return normalizeFooterDisplay(sessionDisplay ?? loadConfig(ctx.cwd, ctx.isProjectTrusted()).footerDisplay);
+}
+
+function footerStatusLine(display: FooterDisplay): string {
+	return `Footer: ${display}`;
+}
+
+export function fusionFooterText(
+	selectedIds: Set<string>,
+	judgeId: string | undefined,
+	mode: FusionMode = "available",
+	display: FooterDisplay = "full",
+): string | undefined {
+	if (display === "off") return undefined;
 	if (selectedIds.size === 0) return mode === "off" ? "Fusion off" : undefined;
 	const panel = Array.from(selectedIds);
+	if (display === "compact") return `${modeLabel(mode)} • ${panel.length} panel`;
 	const judge = judgeId ?? panel[0];
 	return `${modeLabel(mode)} • ${panel.length} panel • judge ${judge}`;
 }
@@ -129,9 +150,11 @@ function updateStatus(
 	ctx.ui.setStatus("fusion", undefined);
 	ctx.ui.setWidget("fusion-panel", undefined);
 
-	const baseText = fusionFooterText(selectedIds, judgeId, mode);
-	const fusionText = baseText ? baseText + toolsSuffix(effectiveDisplayState(ctx)) : baseText;
+	const footerDisplay = effectiveFooterDisplay(ctx);
+	const baseText = fusionFooterText(selectedIds, judgeId, mode, footerDisplay);
+	const fusionText = baseText && footerDisplay === "full" ? baseText + toolsSuffix(effectiveDisplayState(ctx)) : baseText;
 	if (!fusionText) {
+		// Restore Pi's built-in footer when pi-fusion has nothing to add.
 		ctx.ui.setFooter(undefined);
 		return;
 	}
@@ -206,7 +229,7 @@ function persistSessionState(
 	selectedIds: Set<string>,
 	judgeId: string | undefined,
 	mode: FusionMode = "available",
-	tools: Pick<FusionSetupState, "panelTools" | "maxToolCalls" | "toolsConsented"> = {},
+	tools: Pick<FusionSetupState, "panelTools" | "maxToolCalls" | "toolsConsented" | "footerDisplay"> = {},
 ) {
 	pi.appendEntry("fusion-state", {
 		selectedIds: Array.from(selectedIds),
@@ -216,6 +239,7 @@ function persistSessionState(
 		panelTools: tools.panelTools,
 		maxToolCalls: tools.maxToolCalls,
 		toolsConsented: tools.toolsConsented,
+		footerDisplay: tools.footerDisplay,
 		timestamp: Date.now(),
 	});
 }
@@ -233,6 +257,7 @@ function restoreSessionState(ctx: ExtensionContext): FusionSetupState | undefine
 				panelTools?: ToolMode;
 				maxToolCalls?: number;
 				toolsConsented?: boolean;
+				footerDisplay?: FooterDisplay;
 			};
 			const mode = normalizeMode(data);
 			return {
@@ -243,6 +268,7 @@ function restoreSessionState(ctx: ExtensionContext): FusionSetupState | undefine
 				panelTools: data.panelTools,
 				maxToolCalls: data.maxToolCalls,
 				toolsConsented: data.toolsConsented,
+				footerDisplay: normalizeFooterDisplay(data.footerDisplay),
 			};
 		}
 	}
@@ -265,6 +291,7 @@ function effectiveDisplayState(ctx: ExtensionContext): FusionSetupState | undefi
 			mode: "available",
 			panelTools: typeof cfg.panelTools === "string" ? cfg.panelTools : undefined,
 			maxToolCalls: cfg.maxToolCalls,
+			footerDisplay: normalizeFooterDisplay(cfg.footerDisplay),
 		};
 	}
 	return session;
@@ -303,20 +330,26 @@ function forceFusionPrompt(prompt: string): string {
 	].join("\n");
 }
 
-function buildInitialState(
+export function buildInitialState(
 	ctx: ExtensionContext,
 	resolvedPanel: ModelWithDisplay[],
 	resolvedJudge: ModelWithDisplay,
+	configPanelTools?: FusionConfig["panelTools"],
+	configFooterDisplay?: FusionConfig["footerDisplay"],
 ): FusionSetupState {
 	const sessionState = restoreSessionState(ctx);
+	const configTools = typeof configPanelTools === "string" ? configPanelTools : undefined;
 	return {
 		selectedIds: sessionState?.selectedIds ?? new Set(resolvedPanel.map((m) => m.display)),
 		judgeId: sessionState?.judgeId ?? resolvedJudge.display,
 		enabled: normalizeMode(sessionState) === "forced",
 		mode: normalizeMode(sessionState),
-		panelTools: sessionState?.panelTools ?? "none",
+		panelTools: sessionState?.panelTools && sessionState.panelTools !== "none"
+			? sessionState.panelTools
+			: configTools ?? "none",
 		maxToolCalls: sessionState?.maxToolCalls ?? DEFAULT_MAX_TOOL_CALLS,
 		toolsConsented: sessionState?.toolsConsented ?? false,
+		footerDisplay: sessionState?.footerDisplay ?? normalizeFooterDisplay(configFooterDisplay),
 	};
 }
 
@@ -460,7 +493,9 @@ export default function (pi: ExtensionAPI) {
 				const nextMode = modeCommand ?? (currentMode === "forced" ? "available" : "forced");
 				persistSessionState(pi, selectedIds, judgeId, nextMode, sessionState ?? {});
 				updateStatus(pi, ctx, selectedIds, judgeId, nextMode);
-				const summary = (fusionFooterText(selectedIds, judgeId, nextMode) ?? modeLabel(nextMode)) + toolsSuffix(sessionState);
+				const footerDisplay = effectiveFooterDisplay(ctx);
+				const summaryBase = fusionFooterText(selectedIds, judgeId, nextMode, footerDisplay) ?? modeLabel(nextMode);
+				const summary = footerDisplay === "full" ? summaryBase + toolsSuffix(sessionState) : summaryBase;
 				if (ctx.mode === "print") console.log(summary);
 				else ctx.ui.notify(summary, "info");
 				return;
@@ -556,6 +591,7 @@ export default function (pi: ExtensionAPI) {
 				ctx.ui.notify("No authed text models available.", "error");
 				return;
 			}
+			const config = loadConfig(ctx.cwd, ctx.isProjectTrusted());
 
 			const { panel, judge, warnings } = await resolveFusionModels(
 				ctx.cwd,
@@ -569,6 +605,8 @@ export default function (pi: ExtensionAPI) {
 				ctx,
 				panel.map((m) => ({ display: modelDisplay(m) })),
 				{ display: modelDisplay(judge) },
+				config.panelTools,
+				config.footerDisplay,
 			);
 
 			const state = await selectFusionSetup(ctx, available, initial);
@@ -639,6 +677,7 @@ export default function (pi: ExtensionAPI) {
 			const session = restoreSessionState(ctx);
 			const state = effectiveDisplayState(ctx);
 			const fromConfig = !session?.selectedIds.size && !!state?.selectedIds.size;
+			const footerDisplay = effectiveFooterDisplay(ctx);
 			const lines: string[] = [];
 			if (!state?.selectedIds.size) {
 				lines.push(normalizeMode(state) === "off" ? "Fusion is off." : "Fusion is not set up. Run /fusion-setup or add a fusion.json.");
@@ -648,6 +687,7 @@ export default function (pi: ExtensionAPI) {
 				lines.push(`Panel: ${Array.from(state.selectedIds).join(", ")}${fromConfig ? "  (from fusion.json)" : ""}`);
 				lines.push(`Judge: ${state.judgeId ?? Array.from(state.selectedIds)[0]}`);
 				lines.push(toolsStatusLine(state));
+				lines.push(footerStatusLine(footerDisplay));
 				lines.push("");
 				lines.push("Use /fusion to toggle available/forced, /fusion off to disable, /fusion <prompt> to force once. Change panel tools with /fusion-setup.");
 				updateStatus(pi, ctx, state.selectedIds, state.judgeId, mode);

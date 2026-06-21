@@ -19,9 +19,10 @@ import {
 import { MAX_PANEL_MODELS_HARD_LIMIT } from "./config.ts";
 import { modelDisplay } from "./models.ts";
 import { clampMaxToolCalls, isMutatingSelection } from "./tools.ts";
-import type { Api, Model, ToolMode } from "./types.ts";
+import type { Api, FooterDisplay, Model, ToolMode } from "./types.ts";
 
 const TOOL_MODE_CYCLE: ToolMode[] = ["none", "readonly", "all"];
+const FOOTER_DISPLAY_CYCLE: FooterDisplay[] = ["full", "compact", "off"];
 const MAX_CALLS_PRESETS = [4, 8, 12, 16, 25, 50, 100];
 
 interface ModelInfo {
@@ -44,6 +45,8 @@ export interface FusionSetupState {
 	maxToolCalls?: number;
 	/** Whether the user consented to mutating panel tools this session. */
 	toolsConsented?: boolean;
+	/** Footer verbosity for this session. */
+	footerDisplay?: FooterDisplay;
 }
 
 function toModelInfo(available: Model<Api>[]): ModelInfo[] {
@@ -132,6 +135,7 @@ export async function selectFusionSetup(
 		panelTools: initial.panelTools ?? "none",
 		maxToolCalls: clampMaxToolCalls(initial.maxToolCalls),
 		toolsConsented: initial.toolsConsented ?? false,
+		footerDisplay: initial.footerDisplay ?? "full",
 	};
 
 	interface ConfigRow {
@@ -165,6 +169,20 @@ export async function selectFusionSetup(
 				state.maxToolCalls = Number(v);
 			},
 			note: () => "max tool steps per panel model when tools are on",
+		},
+		{
+			label: "Footer",
+			values: FOOTER_DISPLAY_CYCLE,
+			get: () => state.footerDisplay ?? "full",
+			set: (v) => {
+				state.footerDisplay = v as FooterDisplay;
+			},
+			note: () =>
+				state.footerDisplay === "off"
+					? "restore Pi's built-in footer"
+					: state.footerDisplay === "compact"
+						? "show only fusion mode and panel count"
+						: "show fusion mode, panel, judge, and tools",
 		},
 	];
 
@@ -301,6 +319,7 @@ export async function selectFusionSetup(
 				panelTools: state.panelTools,
 				maxToolCalls: state.maxToolCalls,
 				toolsConsented: state.toolsConsented,
+				footerDisplay: state.footerDisplay,
 			});
 		}
 
