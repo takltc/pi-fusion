@@ -1,5 +1,5 @@
+https://img.shields.io/npm/dm/pi-fusion
 <p align="center">
-  <img src=https://img.shields.io/npm/dm/pi-fusion">
   <img src="https://raw.githubusercontent.com/synthetic-recon/pi-fusion/main/assets/fusion.png" alt="pi-fusion" width="520">
 </p>
 
