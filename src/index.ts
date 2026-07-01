@@ -111,6 +111,34 @@ function footerStatusLine(display: FooterDisplay): string {
 	return `Footer: ${display}`;
 }
 
+function sanitizeFooterStatusText(text: string): string {
+	return text
+		.replace(/\x1B[\]PX^_][^\x07\x1B]*(?:\x07|\x1B\\)/g, "")
+		.replace(/[\x90\x98\x9D\x9E\x9F][^\x07\x9C]*(?:\x07|\x9C)/g, "")
+		.replace(/\x9B[0-?]*[ -/]*[@-~]/g, "")
+		.replace(/\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, "")
+		.replace(/[\r\n\t]/g, " ")
+		.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, "")
+		.replace(/ +/g, " ")
+		.trim();
+}
+
+export function formatExtensionStatusLine(
+	extensionStatuses: ReadonlyMap<string, string>,
+	width: number,
+	ellipsis = "...",
+): string | undefined {
+	if (extensionStatuses.size === 0) return undefined;
+	const statusLine = Array.from(extensionStatuses.entries())
+		.sort(([a], [b]) => a.localeCompare(b))
+		.map(([, text]) => sanitizeFooterStatusText(text))
+		.filter((text) => text.length > 0)
+		.join(" ");
+	if (!statusLine) return undefined;
+	const truncated = truncateToWidth(statusLine, width, ellipsis);
+	return ellipsis.includes("\x1B") ? truncated : truncated.replace(/\x1B\[0m/g, "");
+}
+
 export function fusionFooterText(
 	selectedIds: Set<string>,
 	judgeId: string | undefined,
@@ -218,7 +246,14 @@ function updateStatus(
 
 				const top = alignLine(theme.fg("dim", cwd), fusionText ? theme.fg("dim", fusionText) : "", width);
 				const bottom = alignLine(theme.fg("dim", stats.join(" ")), theme.fg("dim", model), width);
-				return [top, bottom];
+				const lines = [top, bottom];
+				const extensionStatusLine = formatExtensionStatusLine(
+					footerData.getExtensionStatuses(),
+					width,
+					theme.fg("dim", "..."),
+				);
+				if (extensionStatusLine) lines.push(extensionStatusLine);
+				return lines;
 			},
 		};
 	});
