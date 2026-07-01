@@ -1,4 +1,6 @@
-<img alt="NPM Downloads" src="https://img.shields.io/npm/dw/pi-fusion">
+<p align="center">
+  <img alt="NPM Downloads" src="https://img.shields.io/npm/dw/pi-fusion">
+</p>
 <p align="center">
   <img src="https://raw.githubusercontent.com/synthetic-recon/pi-fusion/main/assets/fusion.png" alt="pi-fusion" width="520">
 </p>
