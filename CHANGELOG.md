@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.7.6
+
+- pi-fusion's custom footer now preserves status text from other Pi extensions instead of hiding it while fusion is active. Third-party footer statuses are sorted, sanitized, and width-truncated before rendering.
+- Refined the README badges/package image presentation and bumped the release workflow's checkout action.
+
 ## 0.7.5
 
 - Added `footerDisplay` config (`"full"`, `"compact"`, or `"off"`) so power users can shrink or hide pi-fusion's footer text while keeping commands like `/fusion-status` available. Requested by @cosmicnag in #6.
