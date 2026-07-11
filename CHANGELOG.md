@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.8.0
 
 - Added reusable named panels in `fusion.json`, including a configurable default, independent panel/judge reasoning effort, one-shot `--panel` command selection, and profile-derived snapshots in `/fusion-setup`.
 - Reasoning effort now uses Pi's provider-neutral levels for panel and judge calls. Unsupported levels are omitted per model with a visible warning, including during multi-turn panel tool use.
